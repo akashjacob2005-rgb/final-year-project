@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Local database and user uploads
+backend/data/
+*.db
+*.sqlite3
+
+# Downloaded / derived data. Regenerate with:
+#   python ml/download_data.py
+ml/data/dementiabank_raw.json
+ml/data/transcripts.csv
+ml/data/features.csv
+
+# Trained model artefacts ARE committed — they are small (~123KB) and the
+# Docker image ships them, so the app runs without retraining.
+# ml/artifacts/
+
+# OS
+.DS_Store
+Thumbs.db

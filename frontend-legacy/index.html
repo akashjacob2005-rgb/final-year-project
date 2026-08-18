@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>NeuroGuard | AI Cognitive Monitoring</title>
+
+    <link rel="stylesheet" href="style.css">
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet"
+    >
+</head>
+
+<body>
+
+<div class="app">
+
+    <!-- ================= SIDEBAR ================= -->
+
+    <aside class="sidebar">
+
+        <div class="brand">
+
+            <div class="brand-mark">
+                NG
+            </div>
+
+            <div>
+                <h1>NeuroGuard</h1>
+                <span>AI Cognitive Intelligence</span>
+            </div>
+
+        </div>
+
+
+        <div class="nav-label">
+            PLATFORM
+        </div>
+
+        <nav>
+
+            <button
+                class="nav-item active"
+                onclick="showPage('dashboard', this)"
+            >
+                <span class="nav-icon">⌂</span>
+                Dashboard
+            </button>
+
+
+            <button
+                class="nav-item"
+                onclick="showPage('assessment', this)"
+            >
+                <span class="nav-icon">◉</span>
+                Cognitive Assessment
+            </button>
+
+
+            <button
+                class="nav-item"
+                onclick="showPage('results', this)"
+            >
+                <span class="nav-icon">◈</span>
+                AI Analysis
+            </button>
+
+
+            <button
+                class="nav-item"
+                onclick="showPage('monitoring', this)"
+            >
+                <span class="nav-icon">↗</span>
+                Monitoring
+            </button>
+
+        </nav>
+
+
+        <div class="nav-label second">
+            DATA
+
+        </div>
+
+
+        <nav>
+
+            <button
+                class="nav-item"
+                onclick="showPage('uploads', this)"
+            >
+                <span class="nav-icon">↑</span>
+                Data & Reports
+            </button>
+
+        </nav>
+
+
+        <div class="sidebar-footer">
+
+            <div class="system-status">
+
+                <span class="status-dot"></span>
+
+                AI SYSTEM ONLINE
+
+            </div>
+
+            <p>
+                NeuroGuard research prototype
+            </p>
+
+        </div>
+
+    </aside>
+
+
+    <!-- ================= MAIN ================= -->
+
+    <main class="main">
+
+        <!-- TOP BAR -->
+
+        <header class="topbar">
+
+            <div>
+
+                <div class="breadcrumb">
+                    NEUROGUARD / <span id="breadcrumb">DASHBOARD</span>
+                </div>
+
+                <h2 id="pageTitle">
+                    Cognitive Health Overview
+                </h2>
+
+            </div>
+
+
+            <div class="top-actions">
+
+                <button class="icon-button">
+                    ?
+                </button>
+
+                <button class="profile">
+
+                    <div class="profile-avatar">
+                        DU
+                    </div>
+
+                    <div class="profile-info">
+
+                        <strong>
+                            Demo User
+                        </strong>
+
+                        <span>
+                            Research Profile
+                        </span>
+
+                    </div>
+
+                </button>
+
+            </div>
+
+        </header>
+
+
+        <!-- ================================================= -->
+        <!-- DASHBOARD -->
+        <!-- ================================================= -->
+
+        <section
+            id="dashboard"
+            class="page active"
+        >
+
+            <div class="welcome">
+
+                <div>
+
+                    <span class="eyebrow">
+                        MULTIMODAL COGNITIVE AI
+                    </span>
+
+                    <h1>
+                        Early cognitive change,
+                        <span>made measurable.</span>
+                    </h1>
+
+                    <p>
+                        NeuroGuard combines interactive cognitive
+                        assessments, language analysis and neuroimaging
+                        to build a longitudinal view of cognitive health.
+                    </p>
+
+                    <button
+                        class="primary-btn"
+                        onclick="showPage('assessment')"
+                    >
+                        Start Cognitive Assessment
+                        <span>→</span>
+                    </button>
+
+                </div>
+
+
+                <div class="hero-visual">
+
+                    <div class="brain-ring ring-one"></div>
+                    <div class="brain-ring ring-two"></div>
+
+                    <div class="brain-core">
+
+                        <div class="brain-symbol">
+                            N
+                        </div>
+
+                        <span>
+                            AI
+                        </span>
+
+                    </div>
+
+                    <div class="floating-node node-one">
+                        NLP
+                    </div>
+
+                    <div class="floating-node node-two">
+                        CNN
+                    </div>
+
+                    <div class="floating-node node-three">
+                        GNN
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- STATS -->
+
+            <div class="stats-grid">
+
+                <div class="metric-card">
+
+                    <div class="metric-top">
+                        <span>
+                            Cognitive Indicator
+                        </span>
+
+                        <span class="metric-icon">
+                            ◈
+                        </span>
+                    </div>
+
+                    <strong id="dashboardRisk">
+                        —
+                    </strong>
+
+                    <small>
+                        Complete an assessment
+                    </small>
+
+                </div>
+
+
+                <div class="metric-card">
+
+                    <div class="metric-top">
+                        <span>
+                            Assessments
+                        </span>
+
+                        <span class="metric-icon">
+                            ◉
+                        </span>
+                    </div>
+
+                    <strong id="assessmentCount">
+                        0
+                    </strong>
+
+                    <small>
+                        Completed sessions
+                    </small>
+
+                </div>
+
+
+                <div class="metric-card">
+
+                    <div class="metric-top">
+                        <span>
+                            Cognitive Domains
+                        </span>
+
+                        <span class="metric-icon">
+                            ◇
+                        </span>
+                    </div>
+
+                    <strong>
+                        5
+                    </strong>
+
+                    <small>
+                        Memory · Attention · Language
+                    </small>
+
+                </div>
+
+
+                <div class="metric-card">
+
+                    <div class="metric-top">
+                        <span>
+                            AI Modules
+                        </span>
+
+                        <span class="metric-icon">
+                            ✦
+                        </span>
+
+                    </div>
+
+                    <strong>
+                        3
+                    </strong>
+
+                    <small>
+                        CNN · NLP · Graph Learning
+                    </small>
+
+                </div>
+
+            </div>
+
+
+            <!-- LOWER GRID -->
+
+            <div class="dashboard-grid">
+
+                <div class="panel overview-panel">
+
+                    <div class="panel-header">
+
+                        <div>
+
+                            <span class="eyebrow">
+                                COGNITIVE PROFILE
+                            </span>
+
+                            <h3>
+                                Domain Overview
+                            </h3>
+
+                        </div>
+
+                        <span class="panel-badge">
+                            DEMO
+                        </span>
+
+                    </div>
+
+
+                    <div class="domain-list">
+
+                        <div class="domain-row">
+
+                            <div class="domain-name">
+                                <span class="domain-dot memory"></span>
+                                Memory
+                            </div>
+
+                            <div class="domain-track">
+                                <div
+                                    class="domain-fill"
+                                    style="width:72%"
+                                ></div>
+                            </div>
+
+                            <strong>
+                                72
+                            </strong>
+
+                        </div>
+
+
+                        <div class="domain-row">
+
+                            <div class="domain-name">
+                                <span class="domain-dot attention"></span>
+                                Attention
+                            </div>
+
+                            <div class="domain-track">
+                                <div
+                                    class="domain-fill"
+                                    style="width:84%"
+                                ></div>
+                            </div>
+
+                            <strong>
+                                84
+                            </strong>
+
+                        </div>
+
+
+                        <div class="domain-row">
+
+                            <div class="domain-name">
+                                <span class="domain-dot language"></span>
+                                Language
+                            </div>
+
+                            <div class="domain-track">
+                                <div
+                                    class="domain-fill"
+                                    style="width:68%"
+                                ></div>
+                            </div>
+
+                            <strong>
+                                68
+                            </strong>
+
+                        </div>
+
+
+                        <div class="domain-row">
+
+                            <div class="domain-name">
+                                <span class="domain-dot executive"></span>
+                                Executive
+                            </div>
+
+                            <div class="domain-track">
+                                <div
+                                    class="domain-fill"
+                                    style="width:77%"
+                                ></div>
+                            </div>
+
+                            <strong>
+                                77
+                            </strong>
+
+                        </div>
+
+
+                        <div class="domain-row">
+
+                            <div class="domain-name">
+                                <span class="domain-dot speed"></span>
+                                Processing Speed
+                            </div>
+
+                            <div class="domain-track">
+                                <div
+                                    class="domain-fill"
+                                    style="width:81%"
+                                ></div>
+                            </div>
+
+                            <strong>
+                                81
+                            </strong>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="panel ai-panel">
+
+                    <div class="panel-header">
+
+                        <div>
+
+                            <span class="eyebrow">
+                                AI PIPELINE
+                            </span>
+
+                            <h3>
+                                Multimodal Analysis
+                            </h3>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="pipeline">
+
+                        <div class="pipeline-step active">
+
+                            <div class="pipeline-icon">
+                                ◉
+                            </div>
+
+                            <div>
+
+                                <strong>
+                                    Cognitive Tasks
+                                </strong>
+
+                                <span>
+                                    Behavioral features
+                                </span>
+
+                            </div>
+
+                        </div>
+
+
+                        <div class="pipeline-line"></div>
+
+
+                        <div class="pipeline-step">
+
+                            <div class="pipeline-icon">
+                                NLP
+                            </div>
+
+                            <div>
+
+                                <strong>
+                                    Language Model
+                                </strong>
+
+                                <span>
+                                    Linguistic features
+                                </span>
+
+                            </div>
+
+                        </div>
+
+
+                        <div class="pipeline-line"></div>
+
+
+                        <div class="pipeline-step">
+
+                            <div class="pipeline-icon">
+                                CNN
+                            </div>
+
+                            <div>
+
+                                <strong>
+                                    Neuroimaging
+                                </strong>
+
+                                <span>
+                                    Imaging features
+                                </span>
+
+                            </div>
+
+                        </div>
+
+
+                        <div class="pipeline-line"></div>
+
+
+                        <div class="pipeline-step">
+
+                            <div class="pipeline-icon">
+                                GNN
+                            </div>
+
+                            <div>
+
+                                <strong>
+                                    Graph Fusion
+                                </strong>
+
+                                <span>
+                                    Multimodal representation
+                                </span>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- ================================================= -->
+        <!-- ASSESSMENT -->
+        <!-- ================================================= -->
+
+        <section
+            id="assessment"
+            class="page"
+        >
+
+            <div class="assessment-layout">
+
+                <div class="assessment-sidebar">
+
+                    <span class="eyebrow">
+                        ASSESSMENT
+                    </span>
+
+                    <h1>
+                        Cognitive
+                        <span>Evaluation</span>
+                    </h1>
+
+                    <p>
+                        Complete a series of short interactive
+                        tasks measuring different cognitive domains.
+                    </p>
+
+
+                    <div class="task-progress">
+
+                        <div class="progress-title">
+
+                            <span>
+                                Progress
+                            </span>
+
+                            <strong id="taskCounter">
+                                1 / 6
+                            </strong>
+
+                        </div>
+
+                        <div class="big-progress">
+
+                            <div
+                                id="progressBar"
+                            ></div>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="task-menu">
+
+                        <div
+                            class="task-menu-item active"
+                            id="taskMenu0"
+                        >
+                            <span>01</span>
+                            Memory
+                        </div>
+
+                        <div
+                            class="task-menu-item"
+                            id="taskMenu1"
+                        >
+                            <span>02</span>
+                            Processing Speed
+                        </div>
+
+                        <div
+                            class="task-menu-item"
+                            id="taskMenu2"
+                        >
+                            <span>03</span>
+                            Attention
+                        </div>
+
+                        <div
+                            class="task-menu-item"
+                            id="taskMenu3"
+                        >
+                            <span>04</span>
+                            Working Memory
+                        </div>
+
+                        <div
+                            class="task-menu-item"
+                            id="taskMenu4"
+                        >
+                            <span>05</span>
+                            Language
+                        </div>
+
+                        <div
+                            class="task-menu-item"
+                            id="taskMenu5"
+                        >
+                            <span>06</span>
+                            Executive Function
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="assessment-main">
+
+                    <div class="assessment-top">
+
+                        <div>
+
+                            <span class="eyebrow">
+                                CURRENT TASK
+                            </span>
+
+                            <h2 id="taskTitle">
+                                Memory Recall
+                            </h2>
+
+                            <p id="taskDescription">
+                                Remember the items shown below.
+                            </p>
+
+                        </div>
+
+                    </div>
+
+
+                    <div
+                        id="taskContent"
+                        class="task-container"
+                    >
+
+                    </div>
+
+
+                    <div class="task-actions">
+
+                        <button
+                            id="backBtn"
+                            class="secondary-btn"
+                            onclick="previousTask()"
+                        >
+                            ← Back
+                        </button>
+
+                        <button
+                            id="nextBtn"
+                            class="primary-btn"
+                            onclick="nextTask()"
+                        >
+                            Continue →
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- ================================================= -->
+        <!-- RESULTS -->
+        <!-- ================================================= -->
+
+        <section
+            id="results"
+            class="page"
+        >
+
+            <div class="results-header">
+
+                <div>
+
+                    <span class="eyebrow">
+                        NEUROGUARD AI
+                    </span>
+
+                    <h1>
+                        Cognitive Analysis
+                    </h1>
+
+                    <p>
+                        Multidomain analysis generated from
+                        the completed assessment.
+                    </p>
+
+                </div>
+
+                <button
+                    class="secondary-btn"
+                    onclick="showPage('assessment')"
+                >
+                    Retake Assessment
+                </button>
+
+            </div>
+
+
+            <div class="results-hero">
+
+                <div class="risk-section">
+
+                    <span>
+                        COGNITIVE RISK INDICATOR
+                    </span>
+
+                    <div class="risk-circle">
+
+                        <div>
+
+                            <strong id="riskNumber">
+                                —
+                            </strong>
+
+                            <small>
+                                indicator
+                            </small>
+
+                        </div>
+
+                    </div>
+
+                    <div
+                        id="riskLabel"
+                        class="risk-label"
+                    >
+                        Complete assessment
+                    </div>
+
+                </div>
+
+
+                <div class="result-summary">
+
+                    <span class="eyebrow">
+                        AI INTERPRETATION
+                    </span>
+
+                    <h2>
+                        NeuroGuard Assessment Summary
+                    </h2>
+
+                    <p id="summaryText">
+                        Complete the cognitive assessment
+                        to generate the analysis.
+                    </p>
+
+
+                    <div class="research-warning">
+
+                        <span>!</span>
+
+                        Research prototype. This system
+                        does not provide a medical diagnosis.
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="section-heading">
+
+                <div>
+
+                    <span class="eyebrow">
+                        PERFORMANCE
+                    </span>
+
+                    <h2>
+                        Cognitive Domains
+                    </h2>
+
+                </div>
+
+            </div>
+
+
+            <div
+                id="domainGrid"
+                class="result-domain-grid"
+            ></div>
+
+
+            <div class="section-heading">
+
+                <div>
+
+                    <span class="eyebrow">
+                        MULTIMODAL AI
+                    </span>
+
+                    <h2>
+                        Additional Data Sources
+                    </h2>
+
+                </div>
+
+            </div>
+
+
+            <div class="data-grid">
+
+                <div class="data-card">
+
+                    <div class="data-icon">
+                        MRI
+                    </div>
+
+                    <div>
+
+                        <span>
+                            CNN MODULE
+                        </span>
+
+                        <h3>
+                            Neuroimaging
+                        </h3>
+
+                        <p>
+                            Analyze structural brain imaging
+                            for neurodegeneration-related features.
+                        </p>
+
+                        <button
+                            class="outline-btn"
+                            onclick="showPage('uploads')"
+                        >
+                            Upload MRI →
+                        </button>
+
+                    </div>
+
+                </div>
+
+
+                <div class="data-card">
+
+                    <div class="data-icon">
+                        NLP
+                    </div>
+
+                    <div>
+
+                        <span>
+                            LANGUAGE MODULE
+                        </span>
+
+                        <h3>
+                            Speech & Text
+                        </h3>
+
+                        <p>
+                            Extract linguistic and semantic
+                            features from language samples.
+                        </p>
+
+                        <button
+                            class="outline-btn"
+                            onclick="showPage('uploads')"
+                        >
+                            Add Language Data →
+                        </button>
+
+                    </div>
+
+                </div>
+
+
+                <div class="data-card">
+
+                    <div class="data-icon">
+                        GNN
+                    </div>
+
+                    <div>
+
+                        <span>
+                            GRAPH MODULE
+                        </span>
+
+                        <h3>
+                            Multimodal Fusion
+                        </h3>
+
+                        <p>
+                            Integrate cognitive, linguistic and
+                            imaging representations.
+                        </p>
+
+                        <button
+                            class="outline-btn"
+                            onclick="showPage('monitoring')"
+                        >
+                            View Pipeline →
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- ================================================= -->
+        <!-- MONITORING -->
+        <!-- ================================================= -->
+
+        <section
+            id="monitoring"
+            class="page"
+        >
+
+            <div class="results-header">
+
+                <div>
+
+                    <span class="eyebrow">
+                        LONGITUDINAL ANALYSIS
+                    </span>
+
+                    <h1>
+                        Cognitive Trajectory
+                    </h1>
+
+                    <p>
+                        Monitor changes in cognitive performance
+                        across repeated assessments.
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            <div class="panel trajectory-panel">
+
+                <div class="panel-header">
+
+                    <div>
+
+                        <span class="eyebrow">
+                            PERFORMANCE TREND
+                        </span>
+
+                        <h3>
+                            Cognitive Score Over Time
+                        </h3>
+
+                    </div>
+
+                    <span class="panel-badge">
+                        LONGITUDINAL
+                    </span>
+
+                </div>
+
+
+                <div class="fake-chart">
+
+                    <div class="chart-y">
+
+                        <span>100</span>
+                        <span>75</span>
+                        <span>50</span>
+                        <span>25</span>
+                        <span>0</span>
+
+                    </div>
+
+
+                    <div class="chart-area">
+
+                        <div class="chart-grid grid1"></div>
+                        <div class="chart-grid grid2"></div>
+                        <div class="chart-grid grid3"></div>
+                        <div class="chart-grid grid4"></div>
+
+                        <svg
+                            viewBox="0 0 700 250"
+                            preserveAspectRatio="none"
+                        >
+
+                            <polyline
+                                points="0,65 140,85 280,75 420,110 560,95 700,125"
+                                fill="none"
+                                stroke="#3dd6b0"
+                                stroke-width="4"
+                            />
+
+                            <circle
+                                cx="0"
+                                cy="65"
+                                r="5"
+                                fill="#3dd6b0"
+                            />
+
+                            <circle
+                                cx="140"
+                                cy="85"
+                                r="5"
+                                fill="#3dd6b0"
+                            />
+
+                            <circle
+                                cx="280"
+                                cy="75"
+                                r="5"
+                                fill="#3dd6b0"
+                            />
+
+                            <circle
+                                cx="420"
+                                cy="110"
+                                r="5"
+                                fill="#3dd6b0"
+                            />
+
+                            <circle
+                                cx="560"
+                                cy="95"
+                                r="5"
+                                fill="#3dd6b0"
+                            />
+
+                            <circle
+                                cx="700"
+                                cy="125"
+                                r="5"
+                                fill="#3dd6b0"
+                            />
+
+                        </svg>
+
+
+                        <div class="empty-chart-message">
+                            Complete additional assessments
+                            to replace demo trajectory.
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="section-heading">
+
+                <div>
+
+                    <span class="eyebrow">
+                        HISTORY
+                    </span>
+
+                    <h2>
+                        Assessment Sessions
+                    </h2>
+
+                </div>
+
+            </div>
+
+
+            <div class="history-table">
+
+                <div class="table-head">
+
+                    <span>
+                        DATE
+                    </span>
+
+                    <span>
+                        MEMORY
+                    </span>
+
+                    <span>
+                        ATTENTION
+                    </span>
+
+                    <span>
+                        LANGUAGE
+                    </span>
+
+                    <span>
+                        OVERALL
+                    </span>
+
+                </div>
+
+
+                <div
+                    id="historyRows"
+                    class="empty-history"
+                >
+
+                    No previous sessions available.
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- ================================================= -->
+        <!-- UPLOADS -->
+        <!-- ================================================= -->
+
+        <section
+            id="uploads"
+            class="page"
+        >
+
+            <div class="results-header">
+
+                <div>
+
+                    <span class="eyebrow">
+                        MULTIMODAL DATA
+                    </span>
+
+                    <h1>
+                        Data & Reports
+                    </h1>
+
+                    <p>
+                        Provide additional data for NeuroGuard's
+                        multimodal AI pipeline.
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            <div class="upload-layout">
+
+
+                <div class="upload-large">
+
+                    <div class="upload-symbol">
+                        MRI
+                    </div>
+
+                    <span class="eyebrow">
+                        CNN PATHWAY
+                    </span>
+
+                    <h2>
+                        Brain Imaging
+                    </h2>
+
+                    <p>
+                        Upload compatible neuroimaging data
+                        for the convolutional neural network
+                        pathway.
+                    </p>
+
+
+                    <label class="file-drop">
+
+                        <strong>
+                            Drop MRI files here
+                        </strong>
+
+                        <span>
+                            or click to browse
+                        </span>
+
+                        <input
+                            type="file"
+                            accept=".nii,.nii.gz,.dcm,.zip"
+                            onchange="fileSelected(this)"
+                        >
+
+                    </label>
+
+                </div>
+
+
+                <div class="upload-large">
+
+                    <div class="upload-symbol">
+                        NLP
+                    </div>
+
+                    <span class="eyebrow">
+                        NLP PATHWAY
+                    </span>
+
+                    <h2>
+                        Reports & Language
+                    </h2>
+
+                    <p>
+                        Upload cognitive reports, transcripts
+                        or language samples.
+                    </p>
+
+
+                    <label class="file-drop">
+
+                        <strong>
+                            Drop documents here
+                        </strong>
+
+                        <span>
+                            PDF · TXT · CSV
+                        </span>
+
+                        <input
+                            type="file"
+                            accept=".pdf,.txt,.csv"
+                            onchange="fileSelected(this)"
+                        >
+
+                    </label>
+
+                </div>
+
+
+                <div class="upload-large">
+
+                    <div class="upload-symbol">
+                        ◉
+                    </div>
+
+                    <span class="eyebrow">
+                        BEHAVIORAL PATHWAY
+                    </span>
+
+                    <h2>
+                        Cognitive Data
+                    </h2>
+
+                    <p>
+                        Import structured cognitive assessment
+                        measurements.
+                    </p>
+
+
+                    <label class="file-drop">
+
+                        <strong>
+                            Upload cognitive dataset
+                        </strong>
+
+                        <span>
+                            CSV · JSON
+                        </span>
+
+                        <input
+                            type="file"
+                            accept=".csv,.json"
+                            onchange="fileSelected(this)"
+                        >
+
+                    </label>
+
+                </div>
+
+            </div>
+
+
+            <div class="pipeline-explanation">
+
+                <div class="pipeline-title">
+
+                    <span class="eyebrow">
+                        NEUROGUARD ARCHITECTURE
+                    </span>
+
+                    <h2>
+                        From raw data to cognitive insight
+                    </h2>
+
+                </div>
+
+
+                <div class="architecture">
+
+                    <div>
+                        <strong>
+                            Cognitive Tasks
+                        </strong>
+
+                        <span>
+                            Behavioral Features
+                        </span>
+                    </div>
+
+                    <b>→</b>
+
+                    <div>
+                        <strong>
+                            NLP
+                        </strong>
+
+                        <span>
+                            Language Features
+                        </span>
+                    </div>
+
+                    <b>→</b>
+
+                    <div>
+                        <strong>
+                            CNN
+                        </strong>
+
+                        <span>
+                            Imaging Features
+                        </span>
+                    </div>
+
+                    <b>→</b>
+
+                    <div>
+                        <strong>
+                            GNN
+                        </strong>
+
+                        <span>
+                            Multimodal Fusion
+                        </span>
+                    </div>
+
+                    <b>→</b>
+
+                    <div class="final-node">
+                        <strong>
+                            NeuroGuard
+                        </strong>
+
+                        <span>
+                            Risk Indicator
+                        </span>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+</div>
+
+
+<script src="app.js"></script>
+
+</body>
+</html>

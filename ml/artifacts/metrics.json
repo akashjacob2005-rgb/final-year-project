@@ -1,0 +1,120 @@
+{
+  "deployed_model": "combined + logreg",
+  "deployed_because": "statistically indistinguishable from the CV winner (tfidf + logreg, 0.930 vs 0.905); includes handcrafted linguistic features, which are less sensitive to the transcript-vs-ASR domain shift at inference; linear coefficients give directly interpretable per-feature contributions for the results page",
+  "best_cv_model": "tfidf + logreg",
+  "evaluation": "mean over 20 folds (5-fold stratified x 4 repeats)",
+  "all_models": [
+    {
+      "name": "handcrafted + logreg",
+      "mode": "hand",
+      "estimator": "logreg",
+      "n_folds": 20,
+      "roc_auc_mean": 0.8749086573732058,
+      "accuracy_mean": 0.8007020202020202,
+      "sensitivity_mean": 0.7813348416289593,
+      "specificity_mean": 0.8214498299319729,
+      "f1_mean": 0.8006884294939154,
+      "roc_auc_std": 0.03356001598154776,
+      "accuracy_std": 0.04102255809997206,
+      "sensitivity_std": 0.06397108379834161,
+      "specificity_std": 0.06525895486497024,
+      "f1_std": 0.043692098504464476,
+      "roc_auc_ci95": [
+        0.8602003318693047,
+        0.8896169828771069
+      ]
+    },
+    {
+      "name": "tfidf + logreg",
+      "mode": "tfidf",
+      "estimator": "logreg",
+      "n_folds": 20,
+      "roc_auc_mean": 0.9302724054365337,
+      "accuracy_mean": 0.8473737373737373,
+      "sensitivity_mean": 0.8174585218702866,
+      "specificity_mean": 0.8789965986394559,
+      "f1_mean": 0.8459300990879411,
+      "roc_auc_std": 0.024108897679021732,
+      "accuracy_std": 0.03747779241367011,
+      "sensitivity_std": 0.052091379095476904,
+      "specificity_std": 0.04193238413285837,
+      "f1_std": 0.038638245467030395,
+      "roc_auc_ci95": [
+        0.9197062151582492,
+        0.9408385957148181
+      ]
+    },
+    {
+      "name": "combined + logreg",
+      "mode": "combined",
+      "estimator": "logreg",
+      "n_folds": 20,
+      "roc_auc_mean": 0.9047134799432592,
+      "accuracy_mean": 0.8273030303030303,
+      "sensitivity_mean": 0.7979260935143289,
+      "specificity_mean": 0.8584821428571429,
+      "f1_mean": 0.8256526963715309,
+      "roc_auc_std": 0.02957170244629755,
+      "accuracy_std": 0.03657693511972491,
+      "sensitivity_std": 0.054729260722110123,
+      "specificity_std": 0.04925530746994782,
+      "f1_std": 0.03898299886493689,
+      "roc_auc_ci95": [
+        0.8917531099147169,
+        0.9176738499718016
+      ]
+    },
+    {
+      "name": "handcrafted + gbm",
+      "mode": "hand",
+      "estimator": "gbm",
+      "n_folds": 20,
+      "roc_auc_mean": 0.8440882041919332,
+      "accuracy_mean": 0.7735606060606061,
+      "sensitivity_mean": 0.7665912518853696,
+      "specificity_mean": 0.7811649659863945,
+      "f1_mean": 0.7756403584444208,
+      "roc_auc_std": 0.03748639053546165,
+      "accuracy_std": 0.044379972025568135,
+      "sensitivity_std": 0.07364630844047042,
+      "specificity_std": 0.056973974770034456,
+      "f1_std": 0.05012579959027598,
+      "roc_auc_ci95": [
+        0.8276590691681274,
+        0.860517339215739
+      ]
+    },
+    {
+      "name": "combined + gbm",
+      "mode": "combined",
+      "estimator": "gbm",
+      "n_folds": 20,
+      "roc_auc_mean": 0.9081377102122901,
+      "accuracy_mean": 0.8242777777777777,
+      "sensitivity_mean": 0.7968325791855204,
+      "specificity_mean": 0.8531037414965988,
+      "f1_mean": 0.8225744537301203,
+      "roc_auc_std": 0.031119981012579626,
+      "accuracy_std": 0.041227080748563585,
+      "sensitivity_std": 0.06561606054177868,
+      "specificity_std": 0.05142449109627711,
+      "f1_std": 0.04519276890211419,
+      "roc_auc_ci95": [
+        0.8944987771837745,
+        0.9217766432408057
+      ]
+    }
+  ],
+  "dataset": {
+    "source": "DementiaBank Pitt Cookie Theft transcripts",
+    "n_total": 498,
+    "n_dementia": 256,
+    "n_control": 242
+  },
+  "caveats": [
+    "498 samples is small; fold-to-fold variance is substantial.",
+    "Trained on picture-description speech. Valid only for that task.",
+    "Transcripts are clinician-transcribed; ASR output at inference introduces a domain shift not captured by these metrics.",
+    "This is a screening indicator, not a diagnosis."
+  ]
+}

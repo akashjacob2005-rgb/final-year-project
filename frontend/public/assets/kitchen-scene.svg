@@ -1,0 +1,202 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="A kitchen scene: a woman drying dishes at an overflowing sink, and two children taking cookies from a jar in a cupboard while the stool tips over.">
+  <!--
+    Original artwork for the NeuroGuard picture-description test.
+
+    Deliberately composed to contain the same semantic content units the
+    language model was trained on (see CONTENT_UNITS in ml/features.py):
+    woman, boy, girl, cookie, jar, stool, falling, sink, water/overflow,
+    dishes, drying, window, curtain, kitchen, cupboard, and an outdoor view.
+
+    Drawn from scratch rather than reusing the Boston Diagnostic Aphasia
+    Examination "Cookie Theft" plate, which is under copyright.
+  -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#bfe3f7"/>
+      <stop offset="100%" stop-color="#e4f3fb"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8ecae6"/>
+      <stop offset="100%" stop-color="#bfe3f7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- wall and floor -->
+  <rect width="800" height="600" fill="#f4ece1"/>
+  <rect y="452" width="800" height="148" fill="#d8c2a4"/>
+  <!-- skirting board, so the wall/floor join reads as a corner not a tiled wall -->
+  <rect y="440" width="800" height="14" fill="#e8dccb"/>
+  <rect y="452" width="800" height="4" fill="#bda385"/>
+  <!-- floorboards receding towards the viewer -->
+  <g stroke="#cbb595" stroke-width="2" opacity=".8">
+    <path d="M0 492H800M0 536H800M0 584H800"/>
+  </g>
+  <g stroke="#c4ac89" stroke-width="1.5" opacity=".55">
+    <path d="M150 456V492M470 456V492M660 456V492"/>
+    <path d="M60 492V536M300 492V536M560 492V536M730 492V536"/>
+    <path d="M190 536V584M420 536V584M640 536V584"/>
+  </g>
+
+  <!-- ================= window with curtains and garden ================= -->
+  <g>
+    <rect x="58" y="78" width="212" height="168" rx="4" fill="#8a6a44"/>
+    <rect x="68" y="88" width="192" height="148" fill="url(#sky)"/>
+    <!-- garden outside -->
+    <rect x="68" y="186" width="192" height="50" fill="#8fc866"/>
+    <circle cx="120" cy="150" r="30" fill="#6aa84f"/>
+    <rect x="115" y="150" width="10" height="40" fill="#8a6a44"/>
+    <circle cx="205" cy="162" r="22" fill="#7cb85c"/>
+    <rect x="201" y="162" width="8" height="28" fill="#8a6a44"/>
+    <circle cx="95" cy="112" r="13" fill="#fff3c4"/>
+    <!-- shrubs -->
+    <circle cx="160" cy="205" r="14" fill="#6aa84f"/>
+    <circle cx="240" cy="208" r="12" fill="#6aa84f"/>
+    <!-- panes -->
+    <g stroke="#8a6a44" stroke-width="7">
+      <path d="M164 88V236M68 162H260"/>
+    </g>
+    <!-- curtains, blowing inward -->
+    <path d="M58 78h44c6 56-10 108 4 168H58z" fill="#e88b8b"/>
+    <path d="M270 78h-44c-6 56 10 108-4 168h48z" fill="#e88b8b"/>
+    <path d="M102 78c14 40 2 92 18 128" stroke="#d47272" stroke-width="3" fill="none"/>
+    <path d="M226 78c-14 40-2 92-18 128" stroke="#d47272" stroke-width="3" fill="none"/>
+    <rect x="50" y="70" width="228" height="12" rx="6" fill="#6f5334"/>
+  </g>
+
+  <!-- ================= counter, sink, overflowing water ================= -->
+  <g>
+    <rect x="30" y="330" width="300" height="22" rx="4" fill="#b9c6cf"/>
+    <rect x="30" y="352" width="300" height="100" fill="#e0d3bf"/>
+    <rect x="45" y="368" width="126" height="70" rx="3" fill="#d2c2aa"/>
+    <rect x="185" y="368" width="126" height="70" rx="3" fill="#d2c2aa"/>
+    <circle cx="165" cy="403" r="4" fill="#8a6a44"/>
+    <circle cx="191" cy="403" r="4" fill="#8a6a44"/>
+
+    <!-- basin -->
+    <rect x="88" y="300" width="150" height="42" rx="5" fill="#9fb0bc"/>
+    <rect x="96" y="306" width="134" height="30" rx="3" fill="url(#water)"/>
+    <!-- tap, still running -->
+    <path d="M163 300v-34h34v14" stroke="#8d9aa6" stroke-width="9" fill="none" stroke-linecap="round"/>
+    <rect x="192" y="278" width="7" height="26" fill="#a9d6ea"/>
+
+    <!-- water spilling over the near edge and pooling on the floor -->
+    <path d="M96 330c-8 26-16 52-14 78 1 18 6 30 10 44h26c-8-30-14-62-6-94 3-11 6-19 8-28z" fill="#a9d6ea"/>
+    <ellipse cx="120" cy="470" rx="86" ry="18" fill="#a9d6ea"/>
+    <ellipse cx="120" cy="468" rx="58" ry="11" fill="#c6e6f4"/>
+    <ellipse cx="205" cy="486" rx="30" ry="8" fill="#a9d6ea" opacity=".75"/>
+
+    <!-- dishes drying on the counter -->
+    <g>
+      <ellipse cx="270" cy="326" rx="30" ry="8" fill="#ffffff" stroke="#c8ccd2" stroke-width="2"/>
+      <ellipse cx="270" cy="318" rx="26" ry="7" fill="#f2f4f7" stroke="#c8ccd2" stroke-width="2"/>
+      <ellipse cx="270" cy="310" rx="22" ry="6" fill="#ffffff" stroke="#c8ccd2" stroke-width="2"/>
+      <path d="M300 300h16a10 10 0 0 1 0 20h-16z" fill="#ffffff" stroke="#c8ccd2" stroke-width="2"/>
+    </g>
+  </g>
+
+  <!-- ================= the mother, drying a plate ================= -->
+  <g>
+    <!-- skirt / dress -->
+    <path d="M356 300h58l22 152h-102z" fill="#5b8fb9"/>
+    <rect x="366" y="246" width="40" height="62" rx="14" fill="#6ba3cf"/>
+    <!-- head -->
+    <circle cx="386" cy="222" r="27" fill="#f0c9a4"/>
+    <path d="M359 220a27 27 0 0 1 54 0c0-22-12-32-27-32s-27 10-27 32z" fill="#7a5c3e"/>
+    <path d="M359 222c-6 12-4 26 3 32-8-16-6-24-3-32z" fill="#7a5c3e"/>
+    <!-- eyes looking away from the children -->
+    <circle cx="376" cy="220" r="2.6" fill="#3a2e24"/>
+    <circle cx="393" cy="220" r="2.6" fill="#3a2e24"/>
+    <path d="M378 234q8 5 16 0" stroke="#c98b78" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <!-- arm reaching to the plate she is drying -->
+    <path d="M362 262c-22 6-42 16-56 30" stroke="#f0c9a4" stroke-width="15" fill="none" stroke-linecap="round"/>
+    <path d="M410 264c16 10 26 24 30 40" stroke="#f0c9a4" stroke-width="15" fill="none" stroke-linecap="round"/>
+    <!-- the plate and tea towel in her hands -->
+    <circle cx="300" cy="294" r="24" fill="#ffffff" stroke="#c8ccd2" stroke-width="3"/>
+    <path d="M286 306c-10 12-8 26 4 32 10 5 20-2 22-12" fill="#f6d365" opacity=".9"/>
+    <!-- feet, standing in the spilt water -->
+    <rect x="356" y="446" width="34" height="14" rx="6" fill="#4a4a4a"/>
+    <rect x="398" y="446" width="34" height="14" rx="6" fill="#4a4a4a"/>
+  </g>
+
+  <!-- ================= cupboard with the cookie jar ================= -->
+  <g>
+    <rect x="520" y="96" width="248" height="188" rx="6" fill="#a87f52"/>
+    <rect x="530" y="106" width="228" height="168" fill="#c39a68"/>
+    <!-- open left door swung outward -->
+    <g>
+      <rect x="452" y="100" width="74" height="180" rx="5" fill="#96703f"/>
+      <rect x="460" y="108" width="58" height="164" rx="3" fill="#b08a58"/>
+      <circle cx="514" cy="190" r="5" fill="#6d4f2b"/>
+    </g>
+    <!-- shelves -->
+    <rect x="530" y="186" width="228" height="9" fill="#8a6a44"/>
+    <rect x="530" y="264" width="228" height="9" fill="#8a6a44"/>
+    <!-- cookie jar, lid off, boy's hand inside -->
+    <g>
+      <rect x="566" y="128" width="62" height="58" rx="9" fill="#e9e2d4" stroke="#c9bda6" stroke-width="3"/>
+      <rect x="560" y="118" width="74" height="12" rx="6" fill="#cbbfa6"/>
+      <text x="597" y="166" font-family="Georgia, serif" font-size="15" fill="#9a8b6d" text-anchor="middle">COOKIES</text>
+      <!-- lid, tipped off to the side -->
+      <ellipse cx="666" cy="180" rx="26" ry="7" fill="#cbbfa6"/>
+    </g>
+    <!-- cookies on the shelf and one falling -->
+    <circle cx="672" cy="152" r="11" fill="#c98f52"/>
+    <circle cx="669" cy="149" r="1.8" fill="#7a4f22"/><circle cx="676" cy="155" r="1.8" fill="#7a4f22"/>
+    <circle cx="700" cy="156" r="10" fill="#c98f52"/>
+    <circle cx="698" cy="153" r="1.7" fill="#7a4f22"/>
+    <circle cx="620" cy="238" r="10" fill="#c98f52" transform="rotate(18 620 238)"/>
+    <circle cx="617" cy="236" r="1.7" fill="#7a4f22"/>
+    <!-- jars and tins on the lower shelf -->
+    <rect x="546" y="212" width="28" height="50" rx="5" fill="#9fc4a8"/>
+    <rect x="588" y="222" width="24" height="40" rx="4" fill="#d7a3a3"/>
+    <rect x="712" y="208" width="34" height="54" rx="5" fill="#b9b2d6"/>
+  </g>
+
+  <!-- ================= the boy on the tipping stool ================= -->
+  <g transform="rotate(-13 620 430)">
+    <!-- stool, already going over -->
+    <rect x="576" y="392" width="92" height="15" rx="5" fill="#9a6f3f"/>
+    <rect x="588" y="407" width="12" height="66" fill="#8a6237"/>
+    <rect x="644" y="407" width="12" height="66" fill="#8a6237"/>
+    <rect x="588" y="440" width="68" height="9" fill="#8a6237"/>
+    <!-- boy, standing ON the seat and stretching up into the jar -->
+    <!-- legs first, so they sit behind the body -->
+    <path d="M613 336v52" stroke="#3f6fa8" stroke-width="14" stroke-linecap="round"/>
+    <path d="M635 336v52" stroke="#3f6fa8" stroke-width="14" stroke-linecap="round"/>
+    <rect x="602" y="382" width="22" height="11" rx="4" fill="#4a4a4a"/>
+    <rect x="626" y="382" width="22" height="11" rx="4" fill="#4a4a4a"/>
+    <rect x="605" y="276" width="38" height="64" rx="13" fill="#5fa36a"/>
+    <circle cx="624" cy="252" r="24" fill="#f0c9a4"/>
+    <path d="M600 248a24 24 0 0 1 48 0c-4-16-14-24-24-24s-20 8-24 24z" fill="#4a3524"/>
+    <circle cx="616" cy="251" r="2.6" fill="#3a2e24"/>
+    <circle cx="632" cy="251" r="2.6" fill="#3a2e24"/>
+    <ellipse cx="624" cy="264" rx="5" ry="4" fill="#c96e6e"/>
+    <!-- reaching arm, hand disappearing into the jar above -->
+    <path d="M636 288c10-30 6-60-6-92" stroke="#f0c9a4" stroke-width="14" fill="none" stroke-linecap="round"/>
+    <!-- other arm flailing for balance as the stool goes -->
+    <path d="M607 290c-24 6-38 22-42 44" stroke="#f0c9a4" stroke-width="14" fill="none" stroke-linecap="round"/>
+  </g>
+  <!-- motion lines showing the stool falling -->
+  <g stroke="#b0a08c" stroke-width="3" stroke-linecap="round" fill="none">
+    <path d="M690 400c10-6 18-6 26-2"/>
+    <path d="M694 420c11-6 20-5 28 0"/>
+    <path d="M686 380c9-7 17-8 25-5"/>
+  </g>
+
+  <!-- ================= the girl reaching up ================= -->
+  <g transform="translate(-38 0)">
+    <path d="M712 366h44l12 86h-68z" fill="#e0779f"/>
+    <circle cx="734" cy="342" r="23" fill="#f0c9a4"/>
+    <path d="M711 340a23 23 0 0 1 46 0c0-18-10-26-23-26s-23 8-23 26z" fill="#b5762f"/>
+    <path d="M711 342c-7 14-5 32 2 42-6-18-5-30-2-42z" fill="#b5762f"/>
+    <path d="M757 342c7 14 5 32-2 42 6-18 5-30 2-42z" fill="#b5762f"/>
+    <circle cx="727" cy="341" r="2.5" fill="#3a2e24"/>
+    <circle cx="742" cy="341" r="2.5" fill="#3a2e24"/>
+    <path d="M727 352q7 5 14 0" stroke="#c98b78" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+    <!-- one hand up towards the boy, asking for a cookie -->
+    <path d="M714 378c-16-18-22-40-18-58" stroke="#f0c9a4" stroke-width="13" fill="none" stroke-linecap="round"/>
+    <path d="M758 378c8 10 12 22 12 34" stroke="#f0c9a4" stroke-width="13" fill="none" stroke-linecap="round"/>
+    <rect x="714" y="446" width="26" height="12" rx="5" fill="#6b4c8a"/>
+    <rect x="744" y="446" width="26" height="12" rx="5" fill="#6b4c8a"/>
+  </g>
+</svg>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2f5bd7"/>
+      <stop offset="100%" stop-color="#6f4fe0"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#g)"/>
+  <!-- stylised brain fold over a shield, for "cognitive" + "guard" -->
+  <path d="M32 13c-7 0-12 4.4-12 10 0 2.3.9 4.3 2.4 5.9-1.5 1.6-2.4 3.6-2.4 5.9 0 5.6 5 10 12 10s12-4.4 12-10c0-2.3-.9-4.3-2.4-5.9 1.5-1.6 2.4-3.6 2.4-5.9 0-5.6-5-10-12-10z"
+        fill="none" stroke="#fff" stroke-width="3.2" stroke-linejoin="round"/>
+  <path d="M32 14v31M25 22c3 1.5 4.5 3.5 7 3.5M39 22c-3 1.5-4.5 3.5-7 3.5M25 36c3-1.5 4.5-3.5 7-3.5M39 36c-3-1.5-4.5-3.5-7-3.5"
+        fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" opacity=".85"/>
+  <path d="M32 45v6" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>
+</svg>

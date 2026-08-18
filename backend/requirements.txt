@@ -1,0 +1,34 @@
+# --- web ---
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+pydantic-settings
+email-validator
+
+# --- database ---
+sqlalchemy>=2.0
+alembic
+psycopg[binary]
+
+# --- auth ---
+pyjwt
+argon2-cffi
+
+# --- config ---
+python-dotenv
+
+# --- ml runtime (inference) ---
+numpy
+scipy
+scikit-learn
+pandas
+joblib
+spacy
+# Gradient boosting comes from scikit-learn's HistGradientBoostingClassifier,
+# not LightGBM/XGBoost — no OpenMP native library to install, and a much
+# smaller image. Explanations use the linear model's own coefficients, so SHAP
+# (and its numba/llvmlite dependency chain) is not needed either.
+
+# --- speech to text ---
+faster-whisper

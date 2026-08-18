@@ -1,0 +1,27 @@
+# Build artefacts and environments — rebuilt inside the image
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+
+# Local data that must never be baked into an image
+backend/data/
+ml/data/dementiabank_raw.json
+ml/data/features.csv
+**/*.db
+**/*.sqlite3
+
+# Keep ml/artifacts — the trained model IS shipped in the image.
+
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+**/.DS_Store
+frontend-legacy/
+docs/
+*.md
+!README.md

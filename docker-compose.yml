@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-neuroguard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-neuroguard}
+      POSTGRES_DB: ${POSTGRES_DB:-neuroguard}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-neuroguard}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        WHISPER_MODEL: ${WHISPER_MODEL:-base.en}
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-neuroguard}:${POSTGRES_PASSWORD:-neuroguard}@db:5432/${POSTGRES_DB:-neuroguard}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEBUG: "false"
+      # Generate with: openssl rand -base64 48
+      # Without a fixed value every restart invalidates all sessions.
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set - see .env.example}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000}
+      WHISPER_MODEL: ${WHISPER_MODEL:-base.en}
+    volumes:
+      # Recordings persist across restarts; without this a container rebuild
+      # orphans every audio row in the database.
+      - uploads:/app/backend/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  uploads:
