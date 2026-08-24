@@ -29,6 +29,18 @@ const BAND_TEXT = {
   Elevated: 'Several results sit below expectation for your age and education. This is a screening signal, not a diagnosis. Consider discussing it with a doctor.',
 }
 
+/**
+ * Put a component probability on the same /10 scale as the headline.
+ *
+ * The model emits P(decline), where high is bad. The page shows a score where
+ * high is good. Displaying both directions side by side is how people misread a
+ * result — "13%" next to "8.7/10" invites the reader to treat 13 as the score.
+ * Mirrors fusion.fuse()["score_out_of_10"].
+ */
+function toScore(probability) {
+  return ((1 - probability) * 10).toFixed(1)
+}
+
 function bandClass(band) {
   return `badge badge-${(band || 'neutral').toLowerCase()}`
 }
@@ -72,7 +84,7 @@ export default function Results() {
       {/* ---------------------------------------------------- headline */}
       <div className="card">
         <div className="risk-hero">
-          <RiskGauge percent={result.risk_percent} band={result.band} />
+          <RiskGauge score={result.score_out_of_10} band={result.band} />
           <div style={{ flex: 1, minWidth: 260 }}>
             <div className="row wrap mb-1">
               <span className={bandClass(result.band)}>{result.band}</span>
@@ -82,6 +94,18 @@ export default function Results() {
             </div>
             <h2 className="mb-1">Screening result</h2>
             <p className="muted small">{BAND_TEXT[result.band]}</p>
+
+            {/* Without this the page contradicts itself: the band was raised by
+                the safety override, so it sits above what the score alone would
+                give. Explain it where the mismatch is actually seen. */}
+            {result.band_escalated && (
+              <p className="small mt-1">
+                <strong>Why this band:</strong> your combined score is{' '}
+                {result.score_out_of_10} out of 10, which on its own would read{' '}
+                lower. One part of the assessment was far enough outside the
+                expected range to raise it on its own.
+              </p>
+            )}
 
             {result.notes?.length > 0 && (
               <div className="alert alert-warn mt-2" style={{ marginBottom: 0 }}>
@@ -99,7 +123,7 @@ export default function Results() {
         <div className="card">
           <div className="card-title">How this score was produced</div>
           <div className="card-sub">
-            Two components, combined with fixed published weights
+            Two components, each out of 10, combined with fixed published weights
           </div>
           <table className="table">
             <tbody>
@@ -113,7 +137,7 @@ export default function Results() {
                 <td className="mono text-center" style={{ width: 90 }}>
                   {result.components.language_probability === null
                     ? '—'
-                    : `${(result.components.language_probability * 100).toFixed(0)}%`}
+                    : `${toScore(result.components.language_probability)} / 10`}
                 </td>
                 <td className="mono faint text-center" style={{ width: 70 }}>
                   ×{result.weights.language}
@@ -127,7 +151,7 @@ export default function Results() {
                   </div>
                 </td>
                 <td className="mono text-center">
-                  {(result.components.structured_probability * 100).toFixed(0)}%
+                  {toScore(result.components.structured_probability)} / 10
                 </td>
                 <td className="mono faint text-center">
                   ×{result.weights.structured}

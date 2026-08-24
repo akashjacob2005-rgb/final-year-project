@@ -19,6 +19,17 @@ from ...models import AssessmentSession, TestResult, User
 router = APIRouter(prefix="/history", tags=["history"])
 
 
+def _score_out_of_10(risk: float | None) -> float:
+    """User-facing headline score: 10 is best, 0 is worst.
+
+    Inverted from the stored `overall_risk` on purpose. `risk` stays the internal
+    quantity everywhere — bands, trend direction and the database column are all
+    still computed from it — so only the presentation flips and there is exactly
+    one source of truth. Mirrors fusion.fuse()["score_out_of_10"].
+    """
+    return round((1 - (risk or 0)) * 10, 1)
+
+
 @router.get("/sessions")
 def list_sessions(
     limit: int = 50,
@@ -40,6 +51,7 @@ def list_sessions(
             "session_id": s.id,
             "completed_at": s.completed_at,
             "risk_percent": round((s.overall_risk or 0) * 100, 1),
+            "score_out_of_10": _score_out_of_10(s.overall_risk),
             "band": s.risk_band,
             "confidence": s.confidence,
             "domain_z": (s.result_json or {}).get("domain_z", {}),
@@ -67,10 +79,14 @@ def trend(
             "session_id": s.id,
             "completed_at": s.completed_at,
             "risk_percent": round((s.overall_risk or 0) * 100, 1),
+            "score_out_of_10": _score_out_of_10(s.overall_risk),
             "band": s.risk_band,
             "composite_z": s.composite_z,
             "language_probability": s.language_probability,
             "domain_z": (s.result_json or {}).get("domain_z", {}),
+            # Which difficulty tier this session was sat at. Sessions recorded
+            # before difficulty tiering was introduced have no tier stored.
+            "tier": (s.stimuli_json or {}).get("tier"),
         }
         for s in rows
     ]
@@ -86,11 +102,36 @@ def trend(
         else:
             direction = "stable"
 
+    # Crossing an age boundary (40, 60, 75) moves the user to a different
+    # difficulty tier. Their z-scores stay comparable, because each tier is
+    # normed against the stimuli that tier actually receives — but the raw
+    # measures do not, and neither does the reader's intuition. Flag it rather
+    # than letting the chart imply an unbroken like-for-like series.
+    tiers_seen = [p["tier"] for p in points if p["tier"]]
+    tier_changed = len(set(tiers_seen)) > 1
+    tier_change_at = [
+        points[i]["session_id"]
+        for i in range(1, len(points))
+        if points[i]["tier"]
+        and points[i - 1]["tier"]
+        and points[i]["tier"] != points[i - 1]["tier"]
+    ]
+
     return {
         "points": points,
         "count": len(points),
         "direction": direction,
         "change_since_first": round(change, 1) if change is not None else None,
+        "tier_changed": tier_changed,
+        "tier_change_at": tier_change_at,
+        "tier_note": (
+            "The difficulty of these tests is set by age band. You crossed a "
+            "band between sessions, so the test itself changed. Scores are "
+            "adjusted for that, but raw counts are not directly comparable "
+            "across the change."
+        )
+        if tier_changed
+        else None,
     }
 
 
@@ -120,6 +161,7 @@ def summary(
                 "session_id": latest.id,
                 "completed_at": latest.completed_at,
                 "risk_percent": round((latest.overall_risk or 0) * 100, 1),
+                "score_out_of_10": _score_out_of_10(latest.overall_risk),
                 "band": latest.risk_band,
                 "confidence": latest.confidence,
                 "domain_z": (latest.result_json or {}).get("domain_z", {}),

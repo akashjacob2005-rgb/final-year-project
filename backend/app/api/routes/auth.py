@@ -11,20 +11,32 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...config import settings
+from ...core import mailer
 from ...core.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user
 from ...core.security import (
     REFRESH,
     create_access_token,
     create_refresh_token,
+    create_reset_token,
     decode_token,
     hash_password,
     hash_refresh_token,
+    hash_reset_token,
     needs_rehash,
     verify_password,
 )
 from ...database import get_db
-from ...models import RefreshToken, User
-from ...schemas import AuthResponse, UserCreate, UserLogin, UserOut, UserUpdate
+from ...models import PasswordResetToken, RefreshToken, User
+from ...schemas import (
+    AuthResponse,
+    ForgotPasswordRequest,
+    MessageResponse,
+    ResetPasswordRequest,
+    UserCreate,
+    UserLogin,
+    UserOut,
+    UserUpdate,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -199,6 +211,123 @@ def logout(
 
     _clear_auth_cookies(response)
     return {"message": "Signed out"}
+
+
+# --------------------------------------------------------------------------
+# password reset
+# --------------------------------------------------------------------------
+# Same generic reply whether or not the address is registered. Anything that
+# varies with account existence — wording, status code, or response time —
+# turns this endpoint into an account-enumeration oracle, which would undo the
+# care taken in login() above.
+_RESET_REQUESTED = (
+    "If an account exists for that address, a reset link has been sent. "
+    "The link expires in 30 minutes."
+)
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    email = payload.email.lower()
+    # Throttled on the same counter as login, so this cannot be used as an
+    # unmetered way to probe for registered addresses or to spam an inbox.
+    key = f"reset:{request.client.host if request.client else 'unknown'}:{email}"
+    _throttle(key)
+    _record_failure(key)
+
+    user = db.scalar(select(User).where(User.email == email))
+    if user and user.is_active:
+        # Supersede any outstanding token: a user who clicks "forgot password"
+        # twice should not leave the first link live in their inbox.
+        for old in db.scalars(
+            select(PasswordResetToken).where(
+                PasswordResetToken.user_id == user.id,
+                PasswordResetToken.used.is_(False),
+            )
+        ).all():
+            old.used = True
+
+        token, expires_at = create_reset_token()
+        db.add(
+            PasswordResetToken(
+                user_id=user.id,
+                token_hash=hash_reset_token(token),
+                expires_at=expires_at,
+            )
+        )
+        db.commit()
+        # Return value ignored on purpose — see mailer module docstring.
+        mailer.send_reset_email(user.email, token, user.full_name)
+
+    return MessageResponse(message=_RESET_REQUESTED)
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+def reset_password(
+    payload: ResetPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    key = f"reset-confirm:{request.client.host if request.client else 'unknown'}"
+    _throttle(key)
+
+    stored = db.scalar(
+        select(PasswordResetToken).where(
+            PasswordResetToken.token_hash == hash_reset_token(payload.token)
+        )
+    )
+
+    expires_at = stored.expires_at if stored else None
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)  # SQLite drops tzinfo
+
+    # One message for every failure mode. Distinguishing "expired" from "already
+    # used" from "never existed" tells an attacker holding a stale link whether
+    # it was ever real.
+    if (
+        not stored
+        or stored.used
+        or expires_at is None
+        or expires_at < datetime.now(timezone.utc)
+    ):
+        _record_failure(key)
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "This reset link is invalid or has expired. Please request a new one.",
+        )
+
+    user = db.get(User, stored.user_id)
+    if not user or not user.is_active:
+        _record_failure(key)
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "This reset link is invalid or has expired. Please request a new one.",
+        )
+
+    user.password_hash = hash_password(payload.new_password)
+    stored.used = True
+
+    # Anyone holding a session for this account loses it. If the reset was
+    # prompted by a compromise, leaving existing refresh tokens alive would let
+    # the attacker keep the account despite the password change.
+    for rt in db.scalars(
+        select(RefreshToken).where(
+            RefreshToken.user_id == user.id, RefreshToken.revoked.is_(False)
+        )
+    ).all():
+        rt.revoked = True
+
+    db.commit()
+    _attempts.pop(key, None)
+    _attempts.pop(f"{request.client.host if request.client else 'unknown'}:{user.email}", None)
+
+    return MessageResponse(
+        message="Your password has been changed. You can now sign in with it."
+    )
 
 
 @router.get("/me", response_model=UserOut)

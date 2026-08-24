@@ -69,7 +69,7 @@ export default function Dashboard() {
               {new Date(latest.completed_at).toLocaleString()}
             </div>
             <div className="risk-hero">
-              <RiskGauge percent={latest.risk_percent} band={latest.band} size={140} />
+              <RiskGauge score={latest.score_out_of_10} band={latest.band} size={140} />
               <div>
                 <span className={`badge badge-${(latest.band || '').toLowerCase()}`}>
                   {latest.band}

@@ -14,6 +14,46 @@ imported twice is what stops training and serving from drifting apart.
 | `fusion.py` | Combine language probability with structured z-scores | inference |
 | `train_language_model.py` | Cross-validate 5 configurations, pick, calibrate, save | training |
 | `artifacts/` | Trained model + real metrics. Committed (~123KB). | inference |
+| `download_pitt.py` | Fetch the **real** Pitt corpus, with audio (credentials required) | training |
+| `build_dataset.py` | Transcribe that audio via the backend's own Whisper path | training |
+| `train_audio_model.py` | Train on words **and** speech timing, grouped by participant | training |
+
+## Training on real audio (optional, separate from the above)
+
+`download_data.py` fetches an ungated HuggingFace mirror that is **text only**.
+That is why `speech_rate_wpm`, `pause_count` and the rest are computed at
+inference and then discarded — there was no audio to fit a weight against.
+
+The three scripts at the bottom of the table fix that using the real DementiaBank
+Pitt corpus:
+
+```bash
+python ml/download_pitt.py --limit 5   # smoke test first
+python ml/download_pitt.py             # ~550 recordings
+python ml/build_dataset.py             # Whisper over all of them
+python ml/train_audio_model.py
+```
+
+Three things to know before running it:
+
+- **Credentials.** DementiaBank is password-protected. Put `TALKBANK_EMAIL` and
+  `TALKBANK_PASSWORD` in the repo-root `.env`. Request access at
+  <https://talkbank.org/dementia/access/>.
+- **`ml/data/pitt/` must never be committed.** The corpus is under the TalkBank
+  data-use agreement: no redistribution, and it must stay out of the Docker image
+  (`Dockerfile` does `COPY ml/ ./ml/`). It is gitignored and dockerignored. Cite
+  Becker et al. (1994) and acknowledge NIH AG03705 / AG05133.
+- **Nothing is wired into the app.** `train_audio_model.py` writes to
+  `audio_model.joblib`, a new filename. The backend still loads
+  `language_model.joblib` and behaves exactly as before. Deploying the new model
+  is a deliberate separate step.
+
+Expect a **lower** ROC-AUC than the current 0.905. Two reasons, both good ones:
+the text is now real ASR output rather than clinician transcripts, and
+cross-validation is grouped by participant. Pitt is longitudinal — the same
+person recurs across yearly visits — so the old ungrouped scheme let the model
+recognise the speaker rather than the condition. `metrics_audio.json` reports
+both numbers under `leakage_demonstration`.
 
 ## Retraining
 

@@ -86,6 +86,13 @@ export const api = {
   logout: () => request('/auth/logout', { method: 'POST' }),
   me: () => request('/auth/me'),
   updateMe: (data) => request('/auth/me', { method: 'PATCH', body: data }),
+  forgotPassword: (email) =>
+    request('/auth/forgot-password', { method: 'POST', body: { email } }),
+  resetPassword: (token, newPassword) =>
+    request('/auth/reset-password', {
+      method: 'POST',
+      body: { token, new_password: newPassword },
+    }),
 
   // assessment
   startAssessment: () => request('/assessment/start', { method: 'POST' }),

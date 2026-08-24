@@ -156,6 +156,8 @@ a:hover { text-decoration: underline; }
 /* ---------------------------------------------------------------- forms */
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 15px; }
 .label { font-size: .84rem; font-weight: 600; color: var(--text); }
+/* Label with a trailing action on the same line, e.g. "Password  Forgot password?" */
+.label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .hint { font-size: .78rem; color: var(--text-faint); }
 .input {
   padding: 10px 13px; border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -172,6 +174,7 @@ textarea.input { resize: vertical; min-height: 130px; line-height: 1.6; }
 .alert-error { background: var(--elevated-soft); color: #91242f; border: 1px solid #f4ccd1; }
 .alert-info { background: var(--brand-soft); color: var(--brand-dark); border: 1px solid #cfdcfa; }
 .alert-warn { background: var(--borderline-soft); color: #8a5d0c; border: 1px solid #f3ddb4; }
+.alert-success { background: var(--low-soft); color: var(--low); border: 1px solid #b8e5d5; }
 
 /* ---------------------------------------------------------------- auth */
 .auth-page {
@@ -294,6 +297,8 @@ textarea.input { resize: vertical; min-height: 130px; line-height: 1.6; }
   align-items: center; justify-content: center;
 }
 .gauge-value { font-size: 2.1rem; font-weight: 700; letter-spacing: -.03em; line-height: 1; }
+/* "/10" sits alongside the number, smaller and quieter, so the score reads first. */
+.gauge-outof { font-size: .95rem; font-weight: 600; opacity: .55; margin-left: 1px; }
 .gauge-unit { font-size: .75rem; color: var(--text-muted); margin-top: 3px; }
 
 .marker-row {

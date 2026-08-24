@@ -10,6 +10,19 @@ and neuropsychological literature ranges. They are here so the app can express a
 result as a z-score rather than a bare count. They are NOT institution-validated
 norms and must be replaced with locally validated values before any clinical use.
 This limitation is stated in the results UI and in the report.
+
+That caveat is now STRONGER, not weaker, and the reason matters. Task difficulty
+is tiered by age (see backend/app/ml/stimuli.py), so four of the five tests below
+are normed against a harder variant for younger users: more memory targets, a
+deeper digit-span ladder, a 14-node trail, a serial-sevens start that forces
+borrows. No published norms exist for those variants — the literature norms the
+standard forms. The means/SDs for the (18,39) and (40,59) bands are therefore
+estimates extrapolated from the standard-form values, not measurements.
+
+verbal_fluency is the one exception: its task is identical in every tier, so its
+young bands are a straight split of a published range and carry only the original
+caveat. Treat the other four young-band figures as the least reliable numbers in
+this file, and re-derive all of them from local pilot data before any real use.
 """
 
 from __future__ import annotations
@@ -265,32 +278,85 @@ def score_verbal_fluency(
 # --------------------------------------------------------------------------
 # mean / sd of the RAW measure, by age band. See module docstring caveat.
 # "higher_is_better" flips the sign so that a negative z always means worse.
+#
+# THE BANDS HERE ARE THE DIFFICULTY TIERS. They must stay identical to
+# TIER_BANDS in backend/app/ml/stimuli.py:
+#
+#   (18, 39)  -> "demanding"     (60, 74)  -> "moderate"
+#   (40, 59)  -> "challenging"   (75, 120) -> "standard"
+#
+# Each band's mean/sd describes performance on the stimuli THAT BAND ACTUALLY
+# RECEIVES, not on some common version of the test. A younger user gets more
+# memory targets, a deeper digit-span ladder, a 14-node trail and a serial-sevens
+# start that forces borrows; their norm is referenced to that harder variant.
+# Changing a tier's parameters in stimuli.py without re-estimating its band here
+# will silently mis-score everyone in that band — most likely by making healthy
+# young users look impaired, because they would be measured against a norm set
+# for an easier test.
 NORMS: dict[str, dict] = {
-    "memory_recognition": {
+    "memory_recognition": {  # hits, out of a tier-dependent number of targets
+        # SDs on the 7-target tiers are wider than the 5-target one: recognition
+        # hit counts spread out as the list lengthens, and a tight SD against a
+        # score that can hit the floor manufactures implausible z-values.
         "higher_is_better": True,
-        "bands": {(18, 59): (4.6, 0.7), (60, 74): (4.3, 0.9), (75, 120): (3.9, 1.1)},
+        "bands": {
+            (18, 39): (6.0, 1.3),    # 7 targets, 11s study, 25s delay
+            (40, 59): (6.1, 1.3),    # 7 targets, 11s study, 20s delay
+            (60, 74): (4.3, 0.9),    # 5 targets — unchanged
+            (75, 120): (3.4, 0.8),   # 4 targets, 10s study
+        },
     },
     "trail_making_b": {  # seconds to complete
         "higher_is_better": False,
-        "bands": {(18, 59): (22.0, 8.0), (60, 74): (32.0, 13.0), (75, 120): (45.0, 20.0)},
+        "bands": {
+            (18, 39): (34.0, 11.0),  # 14 nodes
+            (40, 59): (39.0, 13.0),  # 14 nodes
+            (60, 74): (32.0, 13.0),  # 10 nodes — unchanged
+            (75, 120): (45.0, 20.0),  # 10 nodes — unchanged
+        },
     },
-    "serial_sevens": {  # number of correct subtractions
+    "serial_sevens": {  # number of correct subtractions, always out of 5
         "higher_is_better": True,
-        "bands": {(18, 59): (4.5, 0.9), (60, 74): (4.1, 1.2), (75, 120): (3.6, 1.5)},
+        "bands": {
+            (18, 39): (4.3, 1.0),    # from 193
+            (40, 59): (4.1, 1.1),    # from 193
+            (60, 74): (4.1, 1.2),    # from 100 — unchanged
+            (75, 120): (3.6, 1.5),   # from 100 — unchanged
+        },
     },
-    "digit_span_backward": {  # longest span
+    "digit_span_backward": {  # longest span reproduced correctly
+        # Re-referenced when the ladders were shortened. Leaving the old means in
+        # place would have penalised a PERFECT score: on a 2-rung ladder the best
+        # achievable raw is 4, against a mean of 4.6, so a flawless performance
+        # would have scored z = -0.50. A norm must never sit above the ceiling of
+        # the test it norms.
         "higher_is_better": True,
-        "bands": {(18, 59): (4.8, 1.1), (60, 74): (4.2, 1.1), (75, 120): (3.8, 1.2)},
+        "bands": {
+            (18, 39): (4.8, 1.1),    # ladder 3-6, 4 rounds
+            (40, 59): (4.2, 0.9),    # ladder 3-5, 3 rounds
+            (60, 74): (4.0, 0.9),    # ladder 3-5, 3 rounds
+            (75, 120): (3.7, 0.9),   # ladder 3-5, 3 rounds
+        },
     },
     "verbal_fluency": {  # admissible words in 60s
+        # Not tiered — every band sits the identical 60-second task, so this is a
+        # straight split of the old 18-59 band and involves no re-referencing.
         "higher_is_better": True,
-        "bands": {(18, 59): (16.0, 4.8), (60, 74): (14.0, 4.5), (75, 120): (12.0, 4.3)},
+        "bands": {
+            (18, 39): (17.0, 4.9),
+            (40, 59): (15.5, 4.7),
+            (60, 74): (14.0, 4.5),   # unchanged
+            (75, 120): (12.0, 4.3),  # unchanged
+        },
     },
 }
 
 # Lower education depresses raw scores independently of cognition. MoCA applies a
 # +1 total-score adjustment at <=12 years; we apply a small per-test z offset.
 EDUCATION_Z_ADJUSTMENT = {"low": 0.35, "medium": 0.0, "high": -0.15}
+
+# Largest magnitude a z-score may take. See normative_z for the rationale.
+Z_CLAMP = 4.0
 
 
 def _education_band(years: int | None) -> str:
@@ -312,21 +378,30 @@ def normative_z(test: str, raw: float, age: int, education_years: int | None) ->
     if not spec:
         return 0.0
 
-    mean, sd = next(
-        (
-            ms
-            for (lo, hi), ms in spec["bands"].items()
-            if lo <= age <= hi
-        ),
-        list(spec["bands"].values())[-1],
-    )
+    bands = spec["bands"]
+    match = next((ms for (lo, hi), ms in bands.items() if lo <= age <= hi), None)
+    if match is None:
+        # Age outside every band. Clamp to the nearest band rather than falling
+        # through to the last one: an under-18 is given the hardest stimuli by
+        # stimuli.tier_for_age, so scoring them against the 75+ norm would read
+        # a difficult test as an easy one and flatter them badly.
+        keys = sorted(bands)
+        match = bands[keys[0]] if age < keys[0][0] else bands[keys[-1]]
+    mean, sd = match
     if sd <= 0:
         return 0.0
 
     z = (raw - mean) / sd
     if not spec["higher_is_better"]:
         z = -z
-    return z + EDUCATION_Z_ADJUSTMENT[_education_band(education_years)]
+    z += EDUCATION_Z_ADJUSTMENT[_education_band(education_years)]
+
+    # Clamp. Past about four standard deviations the number stops carrying
+    # information: it means "floor" or "ceiling", and the difference between
+    # z=-4 and z=-6.4 is an artefact of a small SD meeting a bounded score, not
+    # a clinical distinction. Left unclamped, one bottomed-out test dominates the
+    # domain average and drags the whole assessment with it.
+    return max(-Z_CLAMP, min(Z_CLAMP, z))
 
 
 def apply_norms(

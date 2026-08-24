@@ -59,7 +59,10 @@ export default function Login() {
           </div>
 
           <div className="field">
-            <label className="label" htmlFor="password">Password</label>
+            <div className="label-row">
+              <label className="label" htmlFor="password">Password</label>
+              <Link className="small" to="/forgot-password">Forgot password?</Link>
+            </div>
             <input
               id="password" name="password" type="password" className="input" required
               autoComplete="current-password" value={form.password} onChange={change}

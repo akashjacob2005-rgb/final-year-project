@@ -3,7 +3,9 @@ import { useRef, useState } from 'react'
 /**
  * Test 4 — Serial 7s (MoCA attention item).
  *
- * Subtract 7 from 100, five times.
+ * Subtract 7 repeatedly, five times. The starting number comes from `spec` and
+ * varies by age difficulty tier (100, or an odd three-digit start that forces a
+ * borrow on most steps). See backend/app/ml/stimuli.py.
  *
  * Each prompt chains from the number the user actually gave, not from the ideal
  * sequence. That mirrors the MoCA rule: one arithmetic slip should cost one

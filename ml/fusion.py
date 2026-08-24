@@ -39,6 +39,23 @@ Z_STEEPNESS = 1.5
 BAND_LOW = 0.35
 BAND_ELEVATED = 0.65
 
+# Safety override. Averaging two components means one of them can be quietly
+# outvoted: with a healthy-sounding transcript (p_language ~ 0.26), failing every
+# structured test completely gives 0.5*0.26 + 0.5*1.00 = 0.63 — Borderline, and
+# short of BAND_ELEVATED by 0.02. That margin is an accident of two independently
+# chosen constants, and a screening tool going quiet because *the other half
+# looked fine* fails in the wrong direction.
+#
+# So a component that is severely abnormal on its own raises the band regardless
+# of what the other one said. This escalates only; it never lowers a band, and it
+# never alters `risk` — see fuse() for why the score is left honest.
+#
+# Convention: z <= -1.5 is impairment, so -2.0 is clearly beyond it. Verified not
+# to fire on ordinary poor performance (composite_z ~ -1.2 stays silent).
+SEVERE_COMPOSITE_Z = -2.0
+# The trained classifier's high-confidence region.
+SEVERE_LANGUAGE_PROBABILITY = 0.85
+
 DOMAIN_WEIGHTS = {
     "memory": 1.3,          # earliest and most sensitive domain in decline
     "executive": 1.0,
@@ -121,10 +138,60 @@ def fuse(
 
     weakest = min(domain_z.items(), key=lambda kv: kv[1]) if domain_z else None
 
+    # --- safety override -------------------------------------------------
+    # Deliberately raises the BAND without touching `risk`. Inflating the risk
+    # to force the band would be simpler, but the results page shows the score
+    # as the weighted mean of its two components, and silently breaking that
+    # arithmetic is exactly the kind of hidden adjustment this module exists to
+    # avoid. The score stays truthful; the escalation is stated in a note the
+    # user actually reads.
+    band = band_for(risk)
+    escalation_reason = None
+
+    if composite_z <= SEVERE_COMPOSITE_Z:
+        escalation_reason = (
+            "Performance across the structured tests was well below expectation "
+            f"for your age and education (composite z = {composite_z:.1f})."
+        )
+    elif (
+        language_probability is not None
+        and language_probability >= SEVERE_LANGUAGE_PROBABILITY
+    ):
+        escalation_reason = (
+            "The language analysis of your picture description was strongly "
+            "atypical on its own."
+        )
+
+    # Escalate only. A result already in the top band is left alone, so the note
+    # is never duplicated and the override can never lower a band.
+    band_escalated = escalation_reason is not None and band != "Elevated"
+    if band_escalated:
+        band = "Elevated"
+        notes.append(
+            escalation_reason
+            + " Although the combined score falls in a lower band, one component "
+            "being this far outside the expected range is treated as worth "
+            "attention on its own."
+        )
+    elif escalation_reason is not None:
+        escalation_reason = None  # already Elevated; nothing was escalated
+
     return {
         "risk": round(risk, 4),
         "risk_percent": round(risk * 100, 1),
-        "band": band_for(risk),
+        # The headline figure shown to the user. Deliberately inverted relative
+        # to `risk`: people read a score out of 10 as "higher is better", the way
+        # a test result reads, and showing a risk percentage where a high number
+        # is bad invites exactly the wrong reading at a glance. `risk` remains the
+        # internal quantity — bands, trends and storage are all still computed
+        # from it, so there is one source of truth and only the presentation flips.
+        "score_out_of_10": round((1 - risk) * 10, 1),
+        "band": band,
+        # True when the band was raised by the safety override rather than by the
+        # score alone. The UI needs this to explain why a mid score can carry a
+        # high band; without it the two look contradictory.
+        "band_escalated": band_escalated,
+        "escalation_reason": escalation_reason,
         "confidence": confidence,
         "components": {
             "language_probability": (

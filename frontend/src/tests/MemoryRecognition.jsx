@@ -3,8 +3,11 @@ import { useEffect, useMemo, useState } from 'react'
 /**
  * Test 1 — Delayed recognition memory.
  *
- * Five objects are studied, then a filled delay, then a 15-item grid from which
- * the five must be picked out.
+ * A set of objects is studied, then a filled delay, then a grid of those objects
+ * mixed with twice as many distractors, from which the studied ones must be
+ * picked out. How many objects, and how long the delay, are set by the age
+ * difficulty tier — everything here reads from `spec`, so counts are never
+ * assumed. See backend/app/ml/stimuli.py.
  *
  * The delay is *filled* with an unrelated counting task rather than left blank.
  * An empty pause lets the user silently rehearse the list, which turns a memory
@@ -21,6 +24,13 @@ export default function MemoryRecognition({ spec, onComplete }) {
   const delaySeconds = spec?.delay_seconds ?? 10
   const targets = spec?.targets ?? []
   const grid = useMemo(() => spec?.grid ?? [], [spec])
+
+  // Spelled out rather than shown as a digit — the instruction reads better, and
+  // the count varies by difficulty tier (4 to 7), so it cannot be hardcoded.
+  const countWord =
+    ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'][
+      targets.length
+    ] ?? String(targets.length)
 
   // Drives the countdown for both the study and delay phases.
   useEffect(() => {
@@ -59,11 +69,12 @@ export default function MemoryRecognition({ spec, onComplete }) {
       <div className="test-head">
         <div className="test-name">1 · Memory Recognition</div>
         <div className="test-instruction">
-          {phase === 'intro' && 'You will see five objects. Remember them.'}
-          {phase === 'study' && 'Memorise these five objects.'}
+          {phase === 'intro' &&
+            `You will see ${countWord} objects. Remember them.`}
+          {phase === 'study' && `Memorise these ${countWord} objects.`}
           {phase === 'delay' && 'Hold them in mind while you do this.'}
           {phase === 'recognise' &&
-            'Select the five objects you saw. Choosing extras will count against you.'}
+            `Select the ${countWord} objects you saw. Choosing extras will count against you.`}
         </div>
       </div>
 

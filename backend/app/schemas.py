@@ -5,7 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 TestName = Literal[
     "memory_recognition",
@@ -70,6 +77,28 @@ class AuthResponse(BaseModel):
     message: str = "ok"
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=16, max_length=256)
+    # Same rules as signup — a reset must not be a way to set a weaker password
+    # than the account could have been created with.
+    new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if v.isdigit() or v.isalpha():
+            raise ValueError("Password must contain both letters and numbers")
+        return v
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
 # --------------------------------------------------------------------------
 # assessment
 # --------------------------------------------------------------------------
@@ -123,7 +152,14 @@ class AssessmentResult(BaseModel):
     session_id: int
     risk: float
     risk_percent: float
+    # The user-facing headline: 10 is best, 0 is worst. Inverted from `risk`.
+    score_out_of_10: float
     band: str
+    # True when the band was raised by the safety override in fusion.fuse()
+    # rather than by the score alone, so the UI can explain why a mid score
+    # can carry a high band.
+    band_escalated: bool = False
+    escalation_reason: str | None = None
     confidence: str
     components: dict[str, Any]
     weights: dict[str, float]
@@ -135,10 +171,37 @@ class AssessmentResult(BaseModel):
     tests: list[TestResultOut]
     language: dict[str, Any] | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _backfill_score(cls, data):
+        """Tolerate result blobs written before `score_out_of_10` existed.
+
+        GET /assessment/{id} rehydrates this model straight from the stored
+        `result_json`, so any field added here must cope with rows written by
+        older code — otherwise every historical assessment 500s on read.
+
+        Derived from `risk` rather than defaulted to 0.0: the score is a pure
+        function of the risk, which every stored blob has, so an old result can
+        show its real value instead of a placeholder that would read as a
+        catastrophic outcome. Derived rather than migrated because `result_json`
+        is a historical record and should not be rewritten.
+
+        Mirrors fusion.fuse()["score_out_of_10"]; the formula is duplicated here
+        deliberately, because schemas.py must not import from ml/.
+        """
+        if (
+            isinstance(data, dict)
+            and data.get("score_out_of_10") is None
+            and data.get("risk") is not None
+        ):
+            return {**data, "score_out_of_10": round((1 - data["risk"]) * 10, 1)}
+        return data
+
 
 class HistoryPoint(BaseModel):
     session_id: int
     completed_at: datetime | None
     risk_percent: float | None
+    score_out_of_10: float | None
     band: str | None
     domain_z: dict[str, float] = {}

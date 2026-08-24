@@ -10,6 +10,9 @@
 backend/data/
 ml/data/dementiabank_raw.json
 ml/data/features.csv
+# The Pitt corpus is licensed under the TalkBank DUA and is hundreds of MB.
+# Dockerfile does `COPY ml/ ./ml/`, so without this it ships inside the image.
+ml/data/pitt/
 **/*.db
 **/*.sqlite3
 

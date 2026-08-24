@@ -26,6 +26,12 @@ ml/data/dementiabank_raw.json
 ml/data/transcripts.csv
 ml/data/features.csv
 
+# DementiaBank Pitt corpus (audio + transcripts + derived ASR/features).
+# Obtained under the TalkBank data-use agreement: it MUST NOT be committed,
+# redistributed, or baked into a container image. Regenerate with your own
+# credentials: python ml/download_pitt.py
+ml/data/pitt/
+
 # Trained model artefacts ARE committed — they are small (~123KB) and the
 # Docker image ships them, so the app runs without retraining.
 # ml/artifacts/

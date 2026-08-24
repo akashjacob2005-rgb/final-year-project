@@ -91,7 +91,9 @@ def start_assessment(
     db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
     """Create a session and return the randomised stimuli for all six tests."""
-    generated = stimuli_mod.generate()
+    # Difficulty is tiered by age so the tests keep headroom for younger users;
+    # the matching normative bands live in ml/scoring.py.
+    generated = stimuli_mod.generate(age=user.age)
 
     s = AssessmentSession(
         user_id=user.id,

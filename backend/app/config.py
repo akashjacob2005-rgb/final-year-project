@@ -40,6 +40,23 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # --- password reset ---------------------------------------------------
+    # Short by design: a reset link is a bearer credential for the account, and
+    # it commonly sits in an inbox for far longer than it is needed.
+    reset_token_minutes: int = 30
+    # Where the emailed link points. Must be the frontend origin, not the API.
+    frontend_base_url: str = "http://localhost:5173"
+
+    # SMTP is optional. With no host configured the mailer writes the reset link
+    # to the application log instead of sending it, which keeps the flow usable
+    # offline and in demos without inventing a fake "check your email" success.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str = "NeuroGuard <no-reply@neuroguard.local>"
+    smtp_starttls: bool = True
+
     upload_dir: Path = BACKEND_DIR / "data" / "uploads"
     max_audio_mb: int = 25
 

@@ -79,3 +79,24 @@ def decode_token(token: str, expected_type: str) -> dict | None:
 def hash_refresh_token(token: str) -> str:
     """Refresh tokens are stored hashed, never in plaintext."""
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def create_reset_token() -> tuple[str, datetime]:
+    """Issue a password-reset secret and its expiry.
+
+    Deliberately NOT a JWT. A reset token has to be revocable the instant it is
+    used, and a JWT is only revocable by keeping a server-side record anyway —
+    so this is an opaque random string whose hash is the record. Nothing is
+    encoded in it, so nothing leaks if it ends up in a browser history or a
+    forwarded email.
+    """
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now(timezone.utc) + timedelta(
+        minutes=settings.reset_token_minutes
+    )
+    return token, expires
+
+
+def hash_reset_token(token: str) -> str:
+    """Reset tokens are stored hashed, never in plaintext."""
+    return hashlib.sha256(token.encode()).hexdigest()

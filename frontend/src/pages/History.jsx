@@ -6,10 +6,14 @@ import {
 } from 'recharts'
 import { api } from '../api/client'
 
+// `direction` is computed from the underlying risk, where up means worse. The
+// score shown to the user runs the other way (10 is best), so the wording here
+// describes the SCORE falling, not the risk rising. Keep the two in step: saying
+// "trending upward" for a worsening result would read as good news.
 const DIRECTION_COPY = {
-  worsening: ['Scores trending upward', 'Your screening score has risen since your first assessment. Repeat testing and, if it persists, a conversation with a doctor is the sensible next step.'],
-  improving: ['Scores trending downward', 'Your screening score has fallen since your first assessment.'],
-  stable: ['Stable', 'Your screening score has not changed meaningfully since your first assessment.'],
+  worsening: ['Score trending down', 'Your cognitive score has fallen since your first assessment. Repeat testing and, if it persists, a conversation with a doctor is the sensible next step.'],
+  improving: ['Score trending up', 'Your cognitive score has risen since your first assessment.'],
+  stable: ['Stable', 'Your cognitive score has not changed meaningfully since your first assessment.'],
   insufficient_data: ['Not enough data yet', 'Take at least two assessments to see a trend.'],
 }
 
@@ -75,19 +79,26 @@ export default function History() {
         ) : (
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={points} margin={{ top: 10, right: 16, left: -14, bottom: 4 }}>
-              {/* Band shading makes the y-axis meaningful at a glance. */}
-              <ReferenceArea y1={0} y2={35} fill="var(--low)" fillOpacity={0.07} />
-              <ReferenceArea y1={35} y2={65} fill="var(--borderline)" fillOpacity={0.07} />
-              <ReferenceArea y1={65} y2={100} fill="var(--elevated)" fillOpacity={0.07} />
+              {/* Band shading makes the y-axis meaningful at a glance. The axis
+                  is the score out of 10, so UP IS GOOD and green sits at the
+                  top — the inverse of the underlying risk. Thresholds mirror
+                  BAND_LOW/BAND_ELEVATED in ml/fusion.py (risk .35/.65). */}
+              <ReferenceArea y1={6.5} y2={10} fill="var(--low)" fillOpacity={0.07} />
+              <ReferenceArea y1={3.5} y2={6.5} fill="var(--borderline)" fillOpacity={0.07} />
+              <ReferenceArea y1={0} y2={3.5} fill="var(--elevated)" fillOpacity={0.07} />
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
+              <YAxis domain={[0, 10]} ticks={[0, 2, 4, 6, 8, 10]}
+                tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
               <Tooltip
-                formatter={(v, n) => [`${v}%`, n === 'risk_percent' ? 'Screening score' : n]}
+                formatter={(v, n) => [
+                  `${v} / 10`,
+                  n === 'score_out_of_10' ? 'Cognitive score' : n,
+                ]}
                 contentStyle={{ fontSize: 12, borderRadius: 8 }}
               />
               <Line
-                type="monotone" dataKey="risk_percent" name="risk_percent"
+                type="monotone" dataKey="score_out_of_10" name="score_out_of_10"
                 stroke="var(--brand)" strokeWidth={2.5}
                 dot={{ r: 4, fill: 'var(--brand)' }} activeDot={{ r: 6 }}
               />
@@ -115,7 +126,7 @@ export default function History() {
                 {sessions.map((s) => (
                   <tr key={s.session_id}>
                     <td>{new Date(s.completed_at).toLocaleString()}</td>
-                    <td className="mono">{s.risk_percent}%</td>
+                    <td className="mono">{s.score_out_of_10} / 10</td>
                     <td>
                       <span className={`badge badge-${(s.band || '').toLowerCase()}`}>
                         {s.band}

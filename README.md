@@ -119,8 +119,8 @@ setup needed to get started.
 cd backend && ./.venv/bin/python -m pytest tests/ -v
 ```
 
-13 tests covering the auth flow, a full six-test assessment, cross-user access
-isolation, and the history endpoints.
+27 tests covering the auth flow, a full six-test assessment, cross-user access
+isolation, the history endpoints, age-scaled task difficulty, and password reset.
 
 ---
 

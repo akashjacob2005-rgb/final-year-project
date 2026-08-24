@@ -3,10 +3,12 @@ import Layout from './components/Layout.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import Assessment from './pages/Assessment.jsx'
 import Dashboard from './pages/Dashboard.jsx'
+import ForgotPassword from './pages/ForgotPassword.jsx'
 import History from './pages/History.jsx'
 import Login from './pages/Login.jsx'
 import ModelInfo from './pages/ModelInfo.jsx'
 import Profile from './pages/Profile.jsx'
+import ResetPassword from './pages/ResetPassword.jsx'
 import Results from './pages/Results.jsx'
 import Signup from './pages/Signup.jsx'
 
@@ -15,6 +17,9 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      {/* Public: reached while signed out, by definition. */}
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
 
       <Route
         element={
