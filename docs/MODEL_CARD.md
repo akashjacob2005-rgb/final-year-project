@@ -159,3 +159,75 @@ python ml/train_language_model.py
 
 Deterministic given `SEED = 42`. Writes `ml/artifacts/language_model.joblib`,
 `metrics.json`, and out-of-fold predictions for honest plotting.
+
+---
+
+## MRI pathway (added later): OASIS-3 slice classifier
+
+A third, **separate** pathway that classifies structural brain MRI. It is
+never fused with the behavioural risk score — no dataset pairs MRI with the
+app's six tests, so a combined weight would be a guess, and the app says so.
+
+- **Data.** OASIS-3 T1-weighted MRI. Each MR session contributes 16 axial
+  slices (indices 35–65% of the volume, per-slice 1st–99th percentile
+  intensity normalisation; regenerate with `ml/mri/make_slices.py`). Labels
+  come from the CDR score nearest the scan date.
+- **Task.** Deployed as **binary**: Normal (CDR 0) vs Impaired (CDR ≥ 0.5).
+  The 3-class variant (normal / very mild / dementia) remains runnable with
+  `--label-mode three` for the report's comparison; its honest numbers are
+  substantially lower because CDR 0.5 vs CDR ≥ 1 is genuinely hard to
+  separate on mid-axial 2D slices.
+- **Model.** ResNet-18 pretrained on ImageNet; only layer4 + head fine-tuned
+  (a fully unfrozen net overfits this data size). Class-weighted loss. A
+  session's prediction is the mean of its slice probabilities with
+  horizontal-flip test-time augmentation.
+- **Evaluation.** Subject-stratified **5-fold cross-validation** — no
+  person's anatomy appears in a fold's train and validation sets; metrics are
+  mean ± std across folds. This is the number-one leakage trap in slice-based
+  MRI classification: repositories claiming 90%+ on OASIS almost invariably
+  split by *slice*, which leaks each subject's anatomy into the test set.
+  Our numbers are lower because they are real.
+- **Metrics.** See the `cv` block of `ml/artifacts/mri_metrics.json`
+  (session-level accuracy / F1 / AUC, per-fold and aggregated). The class mix
+  is stated in the same file.
+- **Why this matters for limitation 4 above.** CDR 0.5 is exactly the "early
+  decline" group the language model cannot represent; the MRI pathway is
+  trained to see it, and it sits inside the positive class of the deployed
+  binary model.
+- **Scaling path.** `processed/download_list.csv` defines 518 unique subjects
+  (200 normal / 200 very mild / 118 dementia); `ml/mri/download_oasis.py`
+  fetches the sessions not yet on disk (needs OASIS XNAT credentials), then
+  `make_slices.py` + retraining scale the dataset ~3× — the single biggest
+  accuracy lever available.
+- **Deployment.** Exported to ONNX (`ml/artifacts/mri_model.onnx`), served by
+  `onnxruntime` on CPU behind `POST /api/mri/analyze`; disable with
+  `MRI_ENABLED=false` on memory-constrained hosts.
+- **Explainability.** The ONNX graph returns a second output: the class
+  activation map (CAM) of the final conv block. Because the head is
+  global-avg-pool → linear, CAM here is *exact* (identical to Grad-CAM) and
+  needs no gradients. The API returns each analysed slice plus a heatmap
+  overlay (`slices[]` field) and the UI shows them with an Original / Model
+  attention toggle. The heatmap is model attention — evidence of *where* the
+  network looked — not a clinical annotation of pathology, and the UI says so.
+  Re-export after retraining with `python ml/mri/export_onnx.py`.
+- **Limitations.** CDR staging is not a biopsy-confirmed diagnosis; 2D slices
+  discard 3D context; OASIS-3 is a largely North-American research cohort on
+  known scanners — generalisation to other scanners/populations is untested.
+  **Confidence values are uncalibrated:** the training cohort is enriched 2:1
+  impaired vs normal and the loss is class-weighted, so displayed percentages
+  lean toward "impaired" relative to a screening population; the deployed
+  fold-0 model's normal-class recall is 0.583 (a substantial false-positive
+  rate on healthy scans), and its quoted fold-0 numbers come from the same
+  sessions used for early stopping. The UI discloses this; temperature
+  calibration on the Phase B data is the planned fix (see TODOS.md). Uploads
+  are reoriented to canonical RAS before slicing, so storage axis order does
+  not affect results; 4D series and thin-slab volumes are rejected rather than
+  silently mis-analysed.
+
+Reproducing:
+
+```bash
+python ml/mri/make_slices.py --data-root /path/to/data
+python ml/mri/train_mri.py --data-dir /path/to/data/processed_v2 --folds 5
+# or run ml/mri/train_mri_colab.ipynb on a free Colab T4
+```

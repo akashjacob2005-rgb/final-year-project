@@ -39,3 +39,7 @@ ml/data/pitt/
 # OS
 .DS_Store
 Thumbs.db
+
+# MRI training: the torch checkpoint is large and reproducible; only the ONNX
+# export (which the backend serves) and metrics are committed.
+ml/artifacts/mri_model.pt

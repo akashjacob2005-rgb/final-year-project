@@ -88,6 +88,21 @@ export default function ModelInfo() {
             </tr>
             <tr>
               <td>
+                <strong>MRI analysis</strong>
+                <div className="tiny faint">Structural pathway</div>
+              </td>
+              <td>
+                <span className="badge badge-low">Trained model</span>
+                <div className="tiny muted mt-1">
+                  A ResNet-18 CNN fine-tuned on OASIS-3 brain scans labelled by
+                  CDR stage, with a subject-wise split. Reported on its own
+                  page and never fused into the behavioural score — see the MRI
+                  Analysis page for its real metrics.
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td>
                 <strong>Speech timing</strong>
                 <div className="tiny faint">Pauses, rate</div>
               </td>

@@ -6,6 +6,7 @@ const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: '◈' },
   { to: '/assessment', label: 'New Assessment', icon: '⊕' },
   { to: '/history', label: 'Monitoring', icon: '◔' },
+  { to: '/mri', label: 'MRI Analysis', icon: '◉' },
   { to: '/model', label: 'Model & Method', icon: '⚙' },
   { to: '/profile', label: 'Profile', icon: '◯' },
 ]
@@ -14,6 +15,7 @@ const TITLES = {
   '/dashboard': ['Dashboard', 'Your cognitive health at a glance'],
   '/assessment': ['Cognitive Assessment', 'Six tests, about ten minutes'],
   '/history': ['Longitudinal Monitoring', 'How your scores change over time'],
+  '/mri': ['MRI Analysis', 'Structural pathway — a CNN trained on OASIS-3 brain scans'],
   '/model': ['Model & Method', 'How the score is produced, and how well it performs'],
   '/profile': ['Profile', 'Details used to age- and education-adjust your scores'],
 }
@@ -40,6 +42,7 @@ export default function Layout() {
 
   return (
     <div className="app-shell">
+      {open && <div className="sidebar-backdrop" onClick={() => setOpen(false)} />}
       <aside className={`sidebar ${open ? 'open' : ''}`}>
         <div className="brand">
           <div className="brand-mark">NG</div>
@@ -84,11 +87,12 @@ export default function Layout() {
             {subtitle && <div className="topbar-sub">{subtitle}</div>}
           </div>
           <button
-            className="btn btn-secondary"
-            style={{ display: 'none' }}
+            className="btn btn-secondary menu-btn"
+            aria-label="Open navigation menu"
+            aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
           >
-            Menu
+            ☰ Menu
           </button>
         </header>
         <div className="content">

@@ -112,4 +112,9 @@ export const api = {
   summary: () => request('/history/summary'),
   deleteSession: (id) => request(`/history/sessions/${id}`, { method: 'DELETE' }),
   modelInfo: () => request('/history/model-info'),
+
+  // mri
+  mriInfo: () => request('/mri/info'),
+  mriAnalyze: (formData) =>
+    request('/mri/analyze', { method: 'POST', body: formData, isForm: true }),
 }

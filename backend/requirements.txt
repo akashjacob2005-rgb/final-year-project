@@ -32,3 +32,9 @@ spacy
 
 # --- speech to text ---
 faster-whisper
+
+# --- mri pathway (inference only; training uses torch in ml/mri) ---
+# Set MRI_ENABLED=false to skip loading these at runtime on tiny instances.
+onnxruntime
+nibabel
+pillow

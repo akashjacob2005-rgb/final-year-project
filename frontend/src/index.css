@@ -191,9 +191,11 @@ textarea.input { resize: vertical; min-height: 130px; line-height: 1.6; }
   display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px;
   border-radius: 999px; font-size: .77rem; font-weight: 650;
 }
-.badge-low { background: var(--low-soft); color: var(--low); }
-.badge-borderline { background: var(--borderline-soft); color: var(--borderline); }
-.badge-elevated { background: var(--elevated-soft); color: var(--elevated); }
+/* Badge text darkened vs the raw tokens: at .77rem these must clear WCAG 4.5:1
+   against their soft backgrounds (raw --borderline lands ~2.7:1). */
+.badge-low { background: var(--low-soft); color: #0f7a56; }
+.badge-borderline { background: var(--borderline-soft); color: #9a6710; }
+.badge-elevated { background: var(--elevated-soft); color: #b03340; }
 .badge-neutral { background: var(--surface-2); color: var(--text-muted); }
 
 /* ---------------------------------------------------------------- assessment */
@@ -361,3 +363,118 @@ textarea.input { resize: vertical; min-height: 130px; line-height: 1.6; }
   .sidebar.open { transform: translateX(0); box-shadow: var(--shadow-lg); }
   .content, .topbar { padding-left: 18px; padding-right: 18px; }
 }
+
+/* ---- file dropzone (MRI upload) ---- */
+.dropzone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: 34px 20px; cursor: pointer; text-align: center;
+  border: 2px dashed var(--border); border-radius: var(--radius);
+  background: var(--surface-2); transition: border-color .15s ease, background .15s ease;
+}
+.dropzone:hover, .dropzone.drag { border-color: var(--brand); background: var(--brand-soft); }
+.dropzone-icon {
+  width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; font-size: 1.25rem; background: var(--brand-soft); color: var(--brand);
+}
+.dropzone.drag .dropzone-icon, .dropzone:hover .dropzone-icon { background: var(--surface); }
+.dropzone-title { font-weight: 650; font-size: .93rem; }
+.dropzone-hint { font-size: .8rem; color: var(--text-faint); }
+.file-chip {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+}
+.file-chip .file-chip-icon {
+  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; display: flex;
+  align-items: center; justify-content: center; background: var(--brand-soft); color: var(--brand);
+  font-weight: 700; font-size: .72rem;
+}
+.file-chip .file-chip-name {
+  font-weight: 600; font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.file-chip .file-chip-meta { font-size: .77rem; color: var(--text-faint); }
+.file-chip .file-chip-x {
+  margin-left: auto; border: none; background: none; cursor: pointer; color: var(--text-faint);
+  font-size: 1rem; padding: 4px 6px; border-radius: 6px;
+}
+.file-chip .file-chip-x:hover { background: var(--surface-2); color: var(--text); }
+
+/* ---- MRI slice viewer ---- */
+.slice-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 10px;
+}
+.slice-tile {
+  position: relative; border: 2px solid var(--border); border-radius: var(--radius-sm);
+  overflow: hidden; cursor: pointer; padding: 0; background: #000;
+  transition: transform .12s ease, border-color .12s ease;
+}
+.slice-tile:hover { transform: scale(1.03); border-color: var(--brand); }
+.slice-tile.hot { border-color: var(--elevated); }
+.slice-tile img { display: block; width: 100%; height: auto; }
+.slice-tag {
+  position: absolute; left: 5px; top: 5px; padding: 1px 7px; border-radius: 999px;
+  font-size: .68rem; font-weight: 650; background: rgba(22, 32, 46, .72); color: #fff;
+}
+.slice-prob {
+  position: absolute; right: 5px; bottom: 5px; padding: 1px 7px; border-radius: 999px;
+  font-size: .68rem; font-weight: 650; background: rgba(22, 32, 46, .72); color: #fff;
+}
+.slice-tile.hot .slice-prob { background: var(--elevated); }
+.toggle-pill {
+  display: inline-flex; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface-2); padding: 3px; gap: 2px;
+}
+.toggle-pill button {
+  border: none; background: none; cursor: pointer; padding: 6px 14px;
+  border-radius: 999px; font-size: .82rem; font-weight: 600; color: var(--text-muted);
+}
+.toggle-pill button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.slice-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(10, 16, 26, .62); z-index: 60;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.slice-modal {
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-lg);
+  padding: 20px; max-width: 720px; width: 100%;
+}
+.slice-modal .pair { display: flex; gap: 14px; justify-content: center; }
+.slice-modal .pair figure { margin: 0; flex: 1; min-width: 0; }
+.slice-modal .pair img { width: 100%; border-radius: var(--radius-sm); display: block; }
+.slice-modal .pair figcaption { text-align: center; font-size: .8rem; color: var(--text-muted); margin-top: 6px; }
+
+/* ---- mobile navigation (menu button + drawer backdrop) ---- */
+.menu-btn { display: none !important; }
+.sidebar-backdrop {
+  position: fixed; inset: 0; background: rgba(10, 16, 26, .4); z-index: 40;
+}
+@media (max-width: 860px) {
+  .menu-btn { display: inline-flex !important; }
+}
+
+/* ---- MRI result presentation ---- */
+.mri-verdict { display: flex; flex-direction: column; gap: 4px; margin-bottom: 18px; outline: none; }
+.mri-verdict .verdict-text { font-size: 1.45rem; font-weight: 750; line-height: 1.25; }
+.mri-verdict .verdict-sub { font-size: .9rem; color: var(--text-muted); }
+.verdict-low { color: #0f7a56; }
+.verdict-mid { color: #9a6710; }
+.verdict-high { color: #b03340; }
+
+.prob-row { margin-bottom: 10px; }
+.prob-row .prob-head { display: flex; justify-content: space-between; font-size: .84rem; }
+.prob-row .prob-track { background: var(--surface-2); border-radius: 999px; height: 8px; overflow: hidden; }
+.prob-row .prob-fill { height: 100%; border-radius: 999px; }
+
+.explain-panel {
+  border: 1px solid var(--border); border-left: 3px solid var(--brand);
+  border-radius: var(--radius-sm); background: var(--surface-2);
+  padding: 14px 16px; font-size: .9rem; line-height: 1.7; color: var(--text);
+}
+
+/* ---- MRI viewer accessibility & touch refinements ---- */
+.slice-tile:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+.toggle-pill button { padding: 10px 16px; min-height: 40px; }
+.file-chip .file-chip-x { padding: 10px 12px; min-width: 40px; min-height: 40px; }
+.slice-caption { font-size: .8rem; color: var(--text-muted); margin-top: 10px; }
+.slice-modal { max-height: 90vh; overflow-y: auto; }
+.slice-modal .pair { flex-wrap: wrap; }
+.slice-modal .pair figure { min-width: 240px; }

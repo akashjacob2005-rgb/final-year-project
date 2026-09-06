@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api.routes import assessment, auth, history
+from .api.routes import assessment, auth, history, mri
 from .config import settings
 from .database import Base, engine
 from .ml import language_model, speech
@@ -55,6 +55,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api")
 app.include_router(assessment.router, prefix="/api")
 app.include_router(history.router, prefix="/api")
+app.include_router(mri.router, prefix="/api")
 
 
 @app.get("/api/health", tags=["meta"])
