@@ -50,6 +50,39 @@ class MriUnavailable(Exception):
     """Raised when the model artifact cannot be served (our fault)."""
 
 
+def _sample_dir() -> str | None:
+    # Real env var wins (tests/deploys); .env-loaded settings as fallback.
+    d = os.getenv("MRI_SAMPLE_DIR")
+    if d:
+        return d
+    from ..config import settings
+
+    return settings.mri_sample_dir
+
+
+def samples_available() -> bool:
+    d = _sample_dir()
+    if not d:
+        return False
+    from pathlib import Path
+
+    p = Path(d)
+    return (p / "normal.nii.gz").exists() and (p / "impaired.nii.gz").exists()
+
+
+def sample_bytes(case: str) -> bytes:
+    """Read one of the bundled anonymized research scans (normal|impaired)."""
+    from pathlib import Path
+
+    d = _sample_dir()
+    if not d:
+        raise MriUnavailable("sample scans are not configured on this deployment")
+    path = Path(d) / f"{case}.nii.gz"
+    if not path.exists():
+        raise MriUnavailable(f"sample scan '{case}' is missing")
+    return path.read_bytes()
+
+
 def enabled() -> bool:
     flag = os.getenv("MRI_ENABLED")
     if flag is not None and flag.lower() in {"0", "false", "no"}:
@@ -145,12 +178,22 @@ def _to_model_input(slices: list[np.ndarray]) -> np.ndarray:
     return np.stack(batch).astype(np.float32)
 
 
-def predict(volume_bytes: bytes) -> dict:
-    """Analyse an uploaded .nii/.nii.gz volume. Returns class probabilities."""
+def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
+    """Analyse an uploaded volume (.nii/.nii.gz, or a zipped DICOM series)."""
     from mri.preprocess import extract_slices, load_nifti_bytes  # shared ml/ code
 
     try:
-        volume = load_nifti_bytes(volume_bytes)
+        if is_dicom_zip:
+            from mri.dicom_support import DicomError, load_dicom_zip_bytes
+
+            try:
+                volume = load_dicom_zip_bytes(volume_bytes)
+            except DicomError as exc:
+                raise MriError(str(exc)) from exc
+        else:
+            volume = load_nifti_bytes(volume_bytes)
+    except MriError:
+        raise
     except Exception as exc:  # nibabel raises many concrete types
         raise MriError(f"Could not read the file as a NIfTI volume: {exc}") from exc
     try:

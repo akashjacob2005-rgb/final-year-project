@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { GlassFilter, GlassPanel } from '../components/LiquidGlass.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function Signup() {
@@ -40,7 +41,8 @@ export default function Signup() {
   }
 
   return (
-    <div className="auth-page">
+    <div className="auth-page bloom-scope gradient-bloom-field">
+      <GlassFilter />
       <div className="auth-card">
         <div className="auth-head">
           <div className="brand">
@@ -57,7 +59,8 @@ export default function Signup() {
           </p>
         </div>
 
-        <form className="card" onSubmit={submit}>
+        <GlassPanel className="auth-glass">
+        <form onSubmit={submit}>
           {error && <div className="alert alert-error">{error}</div>}
 
           <div className="field">
@@ -113,6 +116,7 @@ export default function Signup() {
             {busy ? 'Creating account…' : 'Create account'}
           </button>
         </form>
+        </GlassPanel>
 
         <div className="auth-foot">
           Already registered? <Link to="/login">Sign in</Link>

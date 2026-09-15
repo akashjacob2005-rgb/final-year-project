@@ -238,3 +238,113 @@ def test_info_reports_cv_metrics(client):
     if body["available"]:
         assert body["classes"]
         assert "cv" in body
+
+
+# --------------------------------------------------------------------------
+# user-centric additions: sample scans + DICOM zip ingestion
+# --------------------------------------------------------------------------
+def synthetic_dicom_zip(n_slices: int = 40, size: int = 64) -> bytes:
+    """A minimal but geometrically valid MR series, zipped like a scan CD."""
+    import io as _io
+    import zipfile
+
+    import pydicom
+    from pydicom.dataset import FileDataset, FileMetaDataset
+    from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+
+    rng = np.random.default_rng(3)
+    series_uid = generate_uid()
+    study_uid = generate_uid()
+    frame_uid = generate_uid()
+    buf = _io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for i in range(n_slices):
+            meta = FileMetaDataset()
+            meta.MediaStorageSOPClassUID = pydicom.uid.MRImageStorage
+            meta.MediaStorageSOPInstanceUID = generate_uid()
+            meta.TransferSyntaxUID = ExplicitVRLittleEndian
+            ds = FileDataset(None, {}, file_meta=meta, preamble=b"\0" * 128)
+            ds.SOPClassUID = meta.MediaStorageSOPClassUID
+            ds.SOPInstanceUID = meta.MediaStorageSOPInstanceUID
+            ds.Modality = "MR"
+            ds.SeriesInstanceUID = series_uid
+            ds.StudyInstanceUID = study_uid
+            ds.FrameOfReferenceUID = frame_uid
+            ds.PatientName = "Synthetic^Test"
+            ds.PatientID = "TEST"
+            ds.SeriesNumber = 1
+            ds.InstanceNumber = i + 1
+            ds.ImagePositionPatient = [0.0, 0.0, float(i) * 3.0]
+            ds.ImageOrientationPatient = [1, 0, 0, 0, 1, 0]
+            ds.PixelSpacing = [1.0, 1.0]
+            ds.SliceThickness = 3.0
+            ds.Rows = size
+            ds.Columns = size
+            ds.BitsAllocated = 16
+            ds.BitsStored = 16
+            ds.HighBit = 15
+            ds.PixelRepresentation = 0
+            ds.SamplesPerPixel = 1
+            ds.PhotometricInterpretation = "MONOCHROME2"
+            ds.PixelData = (rng.integers(0, 1000, (size, size), dtype=np.uint16)).tobytes()
+            out = _io.BytesIO()
+            ds.save_as(out, enforce_file_format=True)
+            zf.writestr(f"series/IM{i:04d}.dcm", out.getvalue())
+    return buf.getvalue()
+
+
+@needs_artifact
+def test_analyze_sample_endpoints(auth_client, monkeypatch, tmp_path):
+    # point MRI_SAMPLE_DIR at synthetic sample volumes
+    for case in ("normal", "impaired"):
+        (tmp_path / f"{case}.nii.gz").write_bytes(synthetic_nifti_bytes())
+    monkeypatch.setenv("MRI_SAMPLE_DIR", str(tmp_path))
+    r = auth_client.post("/api/mri/analyze-sample?case=impaired")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["sample"] == "impaired"
+    assert len(body["slices"]) == preprocess.N_SLICES
+
+    r = auth_client.post("/api/mri/analyze-sample?case=bogus")
+    assert r.status_code == 400
+
+
+def test_analyze_sample_unconfigured(auth_client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.delenv("MRI_SAMPLE_DIR", raising=False)
+    monkeypatch.setattr(settings, "mri_sample_dir", None)
+    r = auth_client.post("/api/mri/analyze-sample?case=normal")
+    assert r.status_code == 503
+
+
+@needs_artifact
+def test_analyze_dicom_zip_happy_path(auth_client):
+    r = auth_client.post(
+        "/api/mri/analyze",
+        files={"file": ("scan-cd.zip", synthetic_dicom_zip(), "application/zip")},
+    )
+    assert r.status_code == 200, r.text
+    assert len(r.json()["slices"]) == preprocess.N_SLICES
+
+
+def test_analyze_garbage_zip_is_422(auth_client):
+    import io as _io
+    import zipfile
+
+    buf = _io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("notes.txt", "not a scan")
+    r = auth_client.post(
+        "/api/mri/analyze",
+        files={"file": ("junk.zip", buf.getvalue(), "application/zip")},
+    )
+    assert r.status_code == 422
+
+
+def test_fake_zip_suffix_is_422(auth_client):
+    r = auth_client.post(
+        "/api/mri/analyze",
+        files={"file": ("scan.zip", b"definitely not a zip", "application/zip")},
+    )
+    assert r.status_code == 422

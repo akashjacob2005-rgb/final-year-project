@@ -1,5 +1,7 @@
+import { useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout.jsx'
+import { initTheme } from './theme.js'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import Assessment from './pages/Assessment.jsx'
 import Dashboard from './pages/Dashboard.jsx'
@@ -14,6 +16,8 @@ import Results from './pages/Results.jsx'
 import Signup from './pages/Signup.jsx'
 
 export default function App() {
+  useEffect(initTheme, [])
+
   return (
     <Routes>
       <Route path="/login" element={<Login />} />

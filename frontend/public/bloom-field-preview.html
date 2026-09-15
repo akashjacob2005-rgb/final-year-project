@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Bloom Field</title>
+<style>
+html,body{margin:0;height:100%}
+.gradient-bloom-field{
+  height:100%;
+  background-color:#F7EFE3;
+  background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.065'/></svg>"),
+    radial-gradient(circle at 50% 50%, rgba(0,0,0,0) 52%, rgba(0,0,0,0.08) 100%),
+    radial-gradient(circle at 64.25% 49.89%, rgba(220,235,247,1) 0%, rgba(220,235,247,0.844) 10.28%, rgba(220,235,247,0.5) 20.55%, rgba(220,235,247,0.156) 30.83%, rgba(220,235,247,0) 41.1%),
+    radial-gradient(circle at 28.22% 71.84%, rgba(185,212,236,1) 0%, rgba(185,212,236,0.844) 12.81%, rgba(185,212,236,0.5) 25.63%, rgba(185,212,236,0.156) 38.44%, rgba(185,212,236,0) 51.25%),
+    radial-gradient(circle at 47.66% 15.52%, rgba(243,217,228,1) 0%, rgba(243,217,228,0.844) 16.14%, rgba(243,217,228,0.5) 32.27%, rgba(243,217,228,0.156) 48.41%, rgba(243,217,228,0) 64.55%),
+    radial-gradient(circle at 77.83% 80.04%, rgba(247,239,227,1) 0%, rgba(247,239,227,0.844) 19.02%, rgba(247,239,227,0.5) 38.05%, rgba(247,239,227,0.156) 57.07%, rgba(247,239,227,0) 76.1%);
+  background-size:120px 120px,auto,auto,auto,auto,auto;
+  background-blend-mode:overlay,normal,normal,normal,normal,normal;
+}
+</style></head><body><div class="gradient-bloom-field"></div></body></html>

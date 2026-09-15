@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { getTheme, toggleTheme } from '../theme.js'
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: '◈' },
@@ -29,6 +30,7 @@ export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [open, setOpen] = useState(false)
+  const [theme, setTheme] = useState(getTheme)
 
   const [title, subtitle] = TITLES[location.pathname] ||
     (location.pathname.startsWith('/results')
@@ -86,14 +88,26 @@ export default function Layout() {
             <h1>{title}</h1>
             {subtitle && <div className="topbar-sub">{subtitle}</div>}
           </div>
-          <button
-            className="btn btn-secondary menu-btn"
-            aria-label="Open navigation menu"
-            aria-expanded={open}
-            onClick={() => setOpen((v) => !v)}
-          >
-            ☰ Menu
-          </button>
+          <div className="row" style={{ gap: 10 }}>
+            <button
+              className="theme-switch"
+              role="switch"
+              aria-checked={theme === 'dark'}
+              aria-label="Toggle dark mode"
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              onClick={() => setTheme(toggleTheme())}
+            >
+              <span className="theme-switch-thumb">{theme === 'dark' ? '☾' : '☀'}</span>
+            </button>
+            <button
+              className="btn btn-secondary menu-btn"
+              aria-label="Open navigation menu"
+              aria-expanded={open}
+              onClick={() => setOpen((v) => !v)}
+            >
+              ☰ Menu
+            </button>
+          </div>
         </header>
         <div className="content">
           <Outlet />

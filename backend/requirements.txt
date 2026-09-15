@@ -38,3 +38,7 @@ faster-whisper
 onnxruntime
 nibabel
 pillow
+# DICOM ingestion: patients receive .dcm folders from scanning centres, not
+# NIfTI — uploads of a zipped DICOM series are converted server-side.
+dicom2nifti
+pydicom

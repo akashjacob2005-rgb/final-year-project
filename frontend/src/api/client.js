@@ -117,4 +117,6 @@ export const api = {
   mriInfo: () => request('/mri/info'),
   mriAnalyze: (formData) =>
     request('/mri/analyze', { method: 'POST', body: formData, isForm: true }),
+  mriAnalyzeSample: (sampleCase) =>
+    request(`/mri/analyze-sample?case=${sampleCase}`, { method: 'POST' }),
 }

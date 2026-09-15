@@ -202,6 +202,13 @@ app's six tests, so a combined weight would be a guess, and the app says so.
 - **Deployment.** Exported to ONNX (`ml/artifacts/mri_model.onnx`), served by
   `onnxruntime` on CPU behind `POST /api/mri/analyze`; disable with
   `MRI_ENABLED=false` on memory-constrained hosts.
+- **Ingestion (user-centric).** Besides `.nii/.nii.gz`, the API accepts a
+  zipped **DICOM** series — the format scanning centres actually hand to
+  patients — converted server-side (`ml/mri/dicom_support.py`, dicom2nifti;
+  bounded extraction, largest-series selection) into the same canonicalised
+  pipeline. "Try a sample scan" endpoints (`/api/mri/analyze-sample`, gated by
+  `MRI_SAMPLE_DIR`) let users experience the feature on anonymized research
+  scans without owning an MRI file.
 - **Explainability.** The ONNX graph returns a second output: the class
   activation map (CAM) of the final conv block. Because the head is
   global-avg-pool → linear, CAM here is *exact* (identical to Grad-CAM) and

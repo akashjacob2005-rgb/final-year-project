@@ -41,9 +41,12 @@ function PlainExplanation({ result, fileName }) {
   const topPct = (topP * 100).toFixed(1)
   const runnerUpPct = (runnerUpP * 100).toFixed(1)
 
-  const what = `The AI examined ${result.slices_analysed} cross-section images ("slices") from ${
-    fileName ? `your scan "${fileName}"` : 'your scan'
-  } and averaged its opinion across all of them.`
+  const subject = !fileName
+    ? 'your scan'
+    : fileName.startsWith('the ')
+      ? fileName // sample-scan label, already phrased
+      : `your scan "${fileName}"`
+  const what = `The AI examined ${result.slices_analysed} cross-section images ("slices") from ${subject} and averaged its opinion across all of them.`
 
   const found = impaired
     ? 'In this scan it noticed some patterns that it has learned to associate with possible memory-related brain changes.'
@@ -234,9 +237,9 @@ export default function MriAnalysis() {
   function accept(f) {
     setError('')
     if (!f) return
-    if (!/\.nii(\.gz)?$/i.test(f.name)) {
+    if (!/(\.nii(\.gz)?|\.zip)$/i.test(f.name)) {
       setFile(null)
-      setError('Please choose a .nii or .nii.gz file (T1-weighted MRI volume).')
+      setError('Please choose your MRI as a .nii / .nii.gz file, or zip the scan folder from your MRI CD and upload the .zip.')
       return
     }
     if (f.size > MAX_MB * 1024 * 1024) {
@@ -257,6 +260,19 @@ export default function MriAnalysis() {
     dragDepth.current = 0
     setDrag(false)
     accept(e.dataTransfer.files?.[0])
+  }
+
+  async function analyzeSample(sampleCase) {
+    setBusy(true)
+    setError('')
+    setFile(null)
+    try {
+      setResult(await api.mriAnalyzeSample(sampleCase))
+    } catch (err) {
+      setError(err.status ? err.message : 'The analysis service could not be reached — try again in a moment.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function analyze() {
@@ -326,17 +342,19 @@ export default function MriAnalysis() {
   return (
     <div className="grid" style={{ gap: 20 }}>
       <div className="card">
-        <div className="card-title">Analyse a T1-weighted brain MRI</div>
+        <div className="card-title">Analyse a brain MRI (optional)</div>
         <div className="card-sub">
-          Upload a NIfTI volume (.nii or .nii.gz). Sixteen axial slices are
-          extracted and classified against OASIS-3.
+          Already have a brain scan from a checkup? Add a structural check on
+          top of your cognitive tests. Sixteen axial slices are extracted and
+          classified against OASIS-3. No scan? The cognitive tests are the
+          heart of NeuroGuard — this step is entirely optional.
         </div>
 
         <div className="grid" style={{ gap: 12, maxWidth: 520 }}>
           <input
             ref={inputRef}
             type="file"
-            accept=".nii,.nii.gz"
+            accept=".nii,.nii.gz,.zip"
             onChange={pick}
             style={{ display: 'none' }}
           />
@@ -365,7 +383,7 @@ export default function MriAnalysis() {
               <div className="dropzone-icon">⇪</div>
               <div className="dropzone-title">Tap or drop your MRI scan here</div>
               <div className="dropzone-hint">
-                or <span style={{ color: 'var(--brand)', fontWeight: 600 }}>browse files</span> — .nii or .nii.gz, up to {MAX_MB} MB
+                or <span style={{ color: 'var(--brand)', fontWeight: 600 }}>browse files</span> — a .nii/.nii.gz file, or your scan folder zipped (.zip), up to {MAX_MB} MB
               </div>
             </div>
           ) : (
@@ -388,7 +406,7 @@ export default function MriAnalysis() {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <button className="btn btn-primary" disabled={!file || busy} onClick={analyze}>
               {busy ? 'Analysing…' : 'Analyse scan'}
             </button>
@@ -398,6 +416,47 @@ export default function MriAnalysis() {
               </button>
             )}
           </div>
+
+          {info?.samples_available && (
+            <div>
+              <div className="tiny muted" style={{ marginBottom: 8 }}>
+                No scan handy? Try it with an anonymized research scan:
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button className="btn btn-secondary" disabled={busy} onClick={() => analyzeSample('normal')}>
+                  Sample: healthy scan
+                </button>
+                <button className="btn btn-secondary" disabled={busy} onClick={() => analyzeSample('impaired')}>
+                  Sample: impaired scan
+                </button>
+              </div>
+            </div>
+          )}
+
+          <details className="explain-panel">
+            <summary style={{ cursor: 'pointer', fontWeight: 650 }}>
+              Where do I get my scan?
+            </summary>
+            <ol style={{ margin: '10px 0 0', paddingLeft: 18, lineHeight: 1.8 }}>
+              <li>
+                If you've ever had a brain MRI — even for headaches or a routine
+                checkup — the scanning centre gave you a CD, pen drive or a
+                download link. That data is yours; if you've lost it, the centre
+                can re-issue a digital copy on request.
+              </li>
+              <li>
+                Copy the scan folder from the CD to your computer, right-click
+                it and compress it to a <strong>.zip</strong>, then drop the zip
+                above. We read the hospital's format (DICOM) directly and pick
+                the right series automatically.
+              </li>
+              <li>
+                Never had an MRI? You don't need one. The six cognitive tests
+                are the core of NeuroGuard — this page just adds an optional
+                structural check for people who already have a scan.
+              </li>
+            </ol>
+          </details>
         </div>
 
         <div aria-live="polite">
@@ -453,7 +512,10 @@ export default function MriAnalysis() {
             </div>
           ))}
 
-          <PlainExplanation result={result} fileName={file?.name} />
+          <PlainExplanation
+            result={result}
+            fileName={result.sample ? `the ${result.sample} sample scan` : file?.name}
+          />
           {!impaired && (
             <p className="tiny muted mt-2" style={{ lineHeight: 1.6 }}>{HONESTY_TEXT}</p>
           )}

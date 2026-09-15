@@ -62,6 +62,10 @@ class Settings(BaseSettings):
 
     whisper_model: str = "base.en"
 
+    # Directory with normal.nii.gz / impaired.nii.gz for the MRI "try a
+    # sample" buttons; unset hides them (e.g. in production).
+    mri_sample_dir: str | None = None
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

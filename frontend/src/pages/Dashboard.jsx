@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
+import { GlassFilter, GlassPanel } from '../components/LiquidGlass.jsx'
 import RiskGauge from '../components/RiskGauge.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 
@@ -45,7 +46,8 @@ export default function Dashboard() {
 
   return (
     <div className="grid" style={{ gap: 20 }}>
-      <div className="card">
+      <GlassFilter />
+      <div className="card bloom-scope gradient-bloom-field bloom-hero">
         <div className="row between wrap" style={{ gap: 20 }}>
           <div>
             <h2>Hello, {user?.full_name?.split(' ')[0]}</h2>
@@ -63,7 +65,7 @@ export default function Dashboard() {
 
       {latest ? (
         <div className="grid grid-2">
-          <div className="card">
+          <GlassPanel className="lg-dark">
             <div className="card-title">Most recent result</div>
             <div className="card-sub">
               {new Date(latest.completed_at).toLocaleString()}
@@ -88,9 +90,9 @@ export default function Dashboard() {
                 </Link>
               </div>
             </div>
-          </div>
+          </GlassPanel>
 
-          <div className="card">
+          <GlassPanel className="lg-dark">
             <div className="card-title">Monitoring</div>
             <div className="card-sub">Change across your assessments</div>
             <div className="grid grid-2" style={{ gap: 14 }}>
@@ -112,7 +114,7 @@ export default function Dashboard() {
             <Link className="btn btn-secondary mt-3" to="/history">
               View history
             </Link>
-          </div>
+          </GlassPanel>
         </div>
       ) : (
         <div className="card">
