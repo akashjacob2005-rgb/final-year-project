@@ -217,6 +217,10 @@ app's six tests, so a combined weight would be a guess, and the app says so.
   attention toggle. The heatmap is model attention — evidence of *where* the
   network looked — not a clinical annotation of pathology, and the UI says so.
   Re-export after retraining with `python ml/mri/export_onnx.py`.
+- **Architecture study.** ResNet-18 vs Hugging Face transformers (ViT-B/16,
+  DINOv2-small) vs their ensemble, under the identical CV harness — see
+  `docs/ARCH_COMPARISON.md` (`train_mri.py --arch`, `ensemble_eval.py`,
+  `colab_train.ipynb`).
 - **Limitations.** CDR staging is not a biopsy-confirmed diagnosis; 2D slices
   discard 3D context; OASIS-3 is a largely North-American research cohort on
   known scanners — generalisation to other scanners/populations is untested.
