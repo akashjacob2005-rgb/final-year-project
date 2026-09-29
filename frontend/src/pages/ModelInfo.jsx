@@ -107,11 +107,26 @@ export default function ModelInfo() {
                 <div className="tiny faint">Pauses, rate</div>
               </td>
               <td>
-                <span className="badge badge-neutral">Descriptive only</span>
-                <div className="tiny muted mt-1">
-                  The training corpus is text with no audio, so these could not
-                  be validated. They are displayed but excluded from the score.
-                </div>
+                {info.audio ? (
+                  <>
+                    <span className="badge badge-low">Predictive</span>
+                    <div className="tiny muted mt-1">
+                      Trained on real DementiaBank Pitt recordings, so pause and
+                      rate features carry fitted weights. Applies to recorded
+                      sessions; a typed transcript has no timing and is scored by
+                      the text-only model below.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="badge badge-neutral">Descriptive only</span>
+                    <div className="tiny muted mt-1">
+                      The training corpus is text with no audio, so these could
+                      not be validated. They are displayed but excluded from the
+                      score.
+                    </div>
+                  </>
+                )}
               </td>
             </tr>
           </tbody>

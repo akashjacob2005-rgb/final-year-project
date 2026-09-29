@@ -26,7 +26,7 @@ export default function MemoryRecognition({ spec, onComplete }) {
   const grid = useMemo(() => spec?.grid ?? [], [spec])
 
   // Spelled out rather than shown as a digit — the instruction reads better, and
-  // the count varies by difficulty tier (4 to 7), so it cannot be hardcoded.
+  // the count varies by difficulty tier (4 to 6), so it cannot be hardcoded.
   const countWord =
     ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'][
       targets.length
@@ -134,7 +134,7 @@ export default function MemoryRecognition({ spec, onComplete }) {
               ))}
             </div>
             <p className="stage-note mt-3">
-              {selected.length} of 5 selected
+              {selected.length} of {targets.length} selected
             </p>
           </>
         )}

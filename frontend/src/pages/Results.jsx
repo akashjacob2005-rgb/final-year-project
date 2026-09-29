@@ -23,6 +23,16 @@ const TEST_LABEL = {
   verbal_fluency: 'Verbal fluency',
 }
 
+// Why a verbal-fluency word did not count. Worded for the person who typed it,
+// not for the scorer: each one has to answer "but I did say that".
+const FLUENCY_REJECTION = {
+  not_a_word: 'Not found as an English word',
+  proper_noun: 'A name of a person or place',
+  wrong_letter: 'Did not start with the letter',
+  repeat: 'Already counted, or a form of a word already counted',
+  invalid: 'Not a single plain word',
+}
+
 const BAND_TEXT = {
   Low: 'Your performance is broadly in line with expectations for your age and education.',
   Borderline: 'Some results sit below expectation for your age and education. A single screening cannot tell you why — repeating it in a few weeks is the useful next step.',
@@ -78,6 +88,10 @@ export default function Results() {
   )
   const timing = result.language?.timing || {}
   const hasTiming = Object.keys(timing).length > 0 && timing.word_count > 0
+  // Which model scored this session. Decides whether the timing panel is
+  // described as predictive or descriptive — the two models genuinely differ, and
+  // older sessions were scored before the audio model existed.
+  const scoredByAudio = result.language?.model === 'audio'
 
   return (
     <div className="grid" style={{ gap: 20 }}>
@@ -290,10 +304,22 @@ export default function Results() {
                   </div>
                 </div>
                 <div className="disclaimer mt-3">
-                  These timing measures are <strong>not</strong> part of your
-                  score. The model was trained on written transcripts with no
-                  audio, so pause and rate features could not be validated. They
-                  are reported as observations only.
+                  {scoredByAudio ? (
+                    <>
+                      These timing measures <strong>are</strong> part of your
+                      score. The model was trained on real recorded speech, so
+                      how you paced your speech and where you paused carry
+                      weight alongside the words themselves.
+                    </>
+                  ) : (
+                    <>
+                      These timing measures are <strong>not</strong> part of your
+                      score. This session was scored by the text-only model,
+                      which was trained on written transcripts with no audio, so
+                      pause and rate features could not be validated. They are
+                      reported as observations only.
+                    </>
+                  )}
                 </div>
               </>
             )}
@@ -346,6 +372,48 @@ export default function Results() {
           </table>
         </div>
       </div>
+
+      {/* ------------------------------------------- verbal fluency breakdown */}
+      {(() => {
+        const fluency = result.tests.find((t) => t.test_name === 'verbal_fluency')
+        const detail = fluency?.detail_json
+        if (!detail) return null
+        const dropped = Object.entries(detail.rejected || {}).filter(
+          ([, words]) => words && words.length > 0
+        )
+        if (dropped.length === 0 && detail.lexicon_available !== false) return null
+
+        return (
+          <div className="card">
+            <div className="card-title">Verbal fluency — how your words were counted</div>
+            <div className="card-sub">
+              {detail.valid_count} of{' '}
+              {detail.valid_count + dropped.reduce((n, [, w]) => n + w.length, 0)} words
+              counted towards your score
+            </div>
+
+            {dropped.map(([reason, words]) => (
+              <div key={reason} className="mt-3">
+                <div className="muted small mb-2">
+                  {FLUENCY_REJECTION[reason] || reason}
+                </div>
+                <div className="word-chips">
+                  {words.map((w, i) => (
+                    <span key={`${w}-${i}`} className="word-chip dupe">{w}</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {detail.lexicon_available === false && (
+              <div className="disclaimer mt-3">
+                The word list used to check answers was unavailable, so words were
+                counted without being verified. This score is an upper bound.
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       <div className="disclaimer">{result.disclaimer}</div>
 

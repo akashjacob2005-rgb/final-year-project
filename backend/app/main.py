@@ -65,6 +65,10 @@ def health():
         "service": "NeuroGuard",
         "environment": settings.environment,
         "model_loaded": language_model.paths.LANGUAGE_MODEL_PATH.exists(),
+        # Whether recordings are scored by the audio-trained model or degrade to
+        # the text-only one. Worth surfacing: both states serve requests
+        # successfully, so nothing else would reveal which is in use.
+        "audio_model_loaded": language_model.paths.AUDIO_MODEL_PATH.exists(),
     }
 
 

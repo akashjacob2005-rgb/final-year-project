@@ -18,6 +18,28 @@ Because both mechanisms are active, the two must agree: the tier bands here are
 the same bands as NORMS in ml/scoring.py, and the norms are referenced to the
 difficulty each band actually receives. Changing a tier's parameters without
 re-estimating that band's norm will silently mis-score everyone in it.
+
+CALIBRATION PASS — every tier was made easier
+The earlier settings were too hard for healthy people, not just for declining
+ones. Pilot users in the top tier were asked to hold 7 objects across a 25-second
+filled delay, reverse a 6-digit span, trace a 14-node alternating trail and
+subtract 7 repeatedly from 193. Those are above the level the source instruments
+actually use, and a test that a healthy person fails measures anxiety and task
+novelty rather than cognition — the floor effect destroys discrimination just as
+surely as the ceiling effect the tiers were introduced to fix.
+
+What changed, in every tier:
+  * fewer memory targets, with MORE study time per object and a shorter delay;
+  * the digit-span ladder capped at 5 (a backward span of 6 is beyond typical
+    adult ability) and digits presented more slowly, older tiers slowest;
+  * shorter trails;
+  * serial sevens from 100 everywhere — the MoCA anchor — instead of a
+    three-digit start invented to make the task harder.
+Difficulty still increases as age decreases; the whole scale simply sits lower.
+
+Every corresponding band in NORMS was re-referenced in the same commit. The
+tests that hold the two in step are in backend/tests/test_api.py, under
+"age-scaled difficulty".
 """
 
 from __future__ import annotations
@@ -33,7 +55,9 @@ OBJECT_POOL = [
     "saddle", "teapot", "window", "basket", "camera", "dolphin", "engine",
 ]
 
-# Extended to 7 pairs; each tier slices off the front.
+# Six pairs is the longest trail any tier now uses; each tier slices off the
+# front. The list keeps a seventh pair so a tier can be lengthened again without
+# editing this constant, but nothing currently reaches it.
 TRAIL_NUMBERS = ["1", "2", "3", "4", "5", "6", "7"]
 TRAIL_LETTERS = ["A", "B", "C", "D", "E", "F", "G"]
 FLUENCY_LETTERS = ["F", "A", "S"]  # F is the MoCA letter; A/S are standard alternates
@@ -63,47 +87,65 @@ DEFAULT_TIER = "moderate"
 # table gave the 7-object tiers 6 seconds (0.86 s/object, versus 1.60 in the
 # original 5-object test) and produced 0/7 scores from healthy users.
 # test_memory_encoding_time_is_feasible enforces the floor.
+#
+# Every tier now sits at or above 2.0 s/object, comfortably clear of the floor.
 MIN_SECONDS_PER_OBJECT = 1.5
+
+# The digit-span ladder tops out at 5 in every tier. A backward span of 6 is
+# already beyond typical adult ability (normal is about 4-5), so the sixth rung
+# was failed by nearly everyone and carried no information — it only added a
+# round that felt like failure before the test moved on.
+MAX_DIGIT_SPAN = 5
 
 TIER_PARAMS: dict[str, dict] = {
     "demanding": {
-        "memory_targets": 7,
-        "memory_distractors": 14,
-        "study_seconds": 11,
-        "delay_seconds": 25,
+        "memory_targets": 6,
+        "memory_distractors": 12,
+        "study_seconds": 12,      # 2.0 s/object
+        "delay_seconds": 15,
         # Ladders EXTEND upward, they never shift off 3 — see _digit_span_backward.
-        # Capped at 6: a backward span of 7-8 is well beyond typical adult
-        # ability (normal is about 4-5), so the top rungs measured almost nobody
-        # and made the test feel punishing rather than discriminating.
-        "digit_lengths": [3, 4, 5, 6],
-        "trail_pairs": 7,
-        "sevens_start": 193,
+        "digit_lengths": [3, 4, 5],
+        # How long each digit stays on screen. Slower is easier: the digits have
+        # to be held AND reversed, and older tiers get the most time. This does
+        # not touch the raw measure (longest span reproduced), but it does change
+        # the norm — the digit_span_backward band was re-referenced to match.
+        "digit_interval_ms": 1200,
+        "trail_pairs": 6,         # 12 nodes
+        "sevens_start": 100,
     },
     "challenging": {
-        "memory_targets": 7,
-        "memory_distractors": 14,
-        "study_seconds": 11,
-        "delay_seconds": 20,
-        "digit_lengths": [3, 4, 5],
-        "trail_pairs": 7,
-        "sevens_start": 193,
-    },
-    "moderate": {  # the app's original difficulty, unchanged
         "memory_targets": 5,
         "memory_distractors": 10,
-        "study_seconds": 8,
+        "study_seconds": 10,      # 2.0 s/object
+        "delay_seconds": 12,
+        "digit_lengths": [3, 4, 5],
+        "digit_interval_ms": 1300,
+        "trail_pairs": 5,         # 10 nodes
+        "sevens_start": 100,
+    },
+    "moderate": {
+        "memory_targets": 4,
+        "memory_distractors": 8,
+        "study_seconds": 8,       # 2.0 s/object
         "delay_seconds": 10,
         "digit_lengths": [3, 4, 5],
-        "trail_pairs": 5,
+        "digit_interval_ms": 1400,
+        "trail_pairs": 4,         # 8 nodes
         "sevens_start": 100,
     },
     "standard": {
+        # Target count held at 4 rather than cut to 3. Hits are the raw measure,
+        # so a 3-item list leaves only four distinguishable scores and the test
+        # stops grading. This tier gets its relief from time and from the
+        # shorter trail instead: 2.5 s per object to study, the shortest delay,
+        # and the slowest digits.
         "memory_targets": 4,
         "memory_distractors": 8,
-        "study_seconds": 10,
-        "delay_seconds": 10,
+        "study_seconds": 10,      # 2.5 s/object
+        "delay_seconds": 8,
         "digit_lengths": [3, 4, 5],
-        "trail_pairs": 5,
+        "digit_interval_ms": 1500,
+        "trail_pairs": 4,         # 8 nodes
         "sevens_start": 100,
     },
 }
@@ -152,8 +194,8 @@ def _trail_making_b(rng: random.Random, p: dict) -> dict:
 
     # Jittered grid cells: keeps nodes apart (so clicks are unambiguous) while
     # still randomising the path between sessions. Four columns; the number of
-    # rows follows the node count. The 3-row spacing is the original layout and
-    # is preserved exactly, so the 10-node tiers render as they always have.
+    # rows follows the node count. The 3-row spacing is the original layout, so
+    # the 8-, 10- and 12-node tiers all render on the familiar geometry.
     cols = 4
     n_nodes = len(expected)
     rows = -(-n_nodes // cols)  # ceil
@@ -182,18 +224,25 @@ def _digit_span_backward(rng: random.Random, p: dict) -> dict:
     sequence reproduced *correctly*: on a ladder starting at 5, someone whose
     true span is 4 fails every trial and scores 0, so the raw measure would jump
     from 0 straight to 5 and a mild deficit would read as a severe one.
+
+    Every tier now runs the same 3-4-5 ladder; tiers differ only in how long
+    each digit is shown. Keeping three rungs everywhere is deliberate — a
+    two-rung ladder yields only the raw values 0, 3 and 4, which is too coarse
+    to grade with.
     """
     trials = [
         {"length": n, "sequence": [rng.randint(0, 9) for _ in range(n)]}
         for n in p["digit_lengths"]
     ]
-    return {"trials": trials, "digit_interval_ms": 1000}
+    return {"trials": trials, "digit_interval_ms": p["digit_interval_ms"]}
 
 
 def _serial_sevens(p: dict) -> dict:
-    # Harder tiers start from an odd three-digit number, which forces a borrow
-    # on most steps. The subtrahend stays at 7 and the count stays at 5 so the
-    # MoCA scoring rule and the raw measure remain comparable across tiers.
+    # No longer tiered. Younger tiers used to start from an odd three-digit
+    # number (193) to force borrows, but 100 already borrows on every step —
+    # the three-digit start added arithmetic load, not attentional load, which
+    # is what this item is supposed to measure. Everyone now sits the MoCA
+    # version: 100, minus 7, five times.
     return {"start": p["sevens_start"], "steps": 5, "subtract": 7}
 
 

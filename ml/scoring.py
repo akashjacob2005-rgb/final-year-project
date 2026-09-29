@@ -12,17 +12,32 @@ norms and must be replaced with locally validated values before any clinical use
 This limitation is stated in the results UI and in the report.
 
 That caveat is now STRONGER, not weaker, and the reason matters. Task difficulty
-is tiered by age (see backend/app/ml/stimuli.py), so four of the five tests below
+is tiered by age (see backend/app/ml/stimuli.py), so three of the five tests below
 are normed against a harder variant for younger users: more memory targets, a
-deeper digit-span ladder, a 14-node trail, a serial-sevens start that forces
-borrows. No published norms exist for those variants — the literature norms the
-standard forms. The means/SDs for the (18,39) and (40,59) bands are therefore
-estimates extrapolated from the standard-form values, not measurements.
+longer trail, faster digit presentation. No published norms exist for those
+variants — the literature norms the standard forms. The means/SDs for the
+(18,39) and (40,59) bands are therefore estimates extrapolated from the
+standard-form values, not measurements.
 
-verbal_fluency is the one exception: its task is identical in every tier, so its
-young bands are a straight split of a published range and carry only the original
-caveat. Treat the other four young-band figures as the least reliable numbers in
+verbal_fluency and serial_sevens are the exceptions: both tasks are now identical
+in every tier, so verbal_fluency's young bands are a straight split of a published
+range and serial_sevens is the MoCA item everywhere. They carry only the original
+caveat. Treat the other three young-band figures as the least reliable numbers in
 this file, and re-derive all of them from local pilot data before any real use.
+
+RE-REFERENCED AFTER THE DIFFICULTY REDUCTION
+Every tier in stimuli.py was made easier (fewer memory targets with more study
+time, shorter delays, shorter trails, a ladder capped at 5, slower digits,
+serial sevens from 100 for everyone). Each band below was re-estimated in the
+same change. Where a tier's variant did not change, its numbers did not either —
+those are called out per band so it is obvious which figures moved and why.
+
+The derivation is not measurement. Memory means were held at roughly 85-90% of
+the target count, the hit rate the previous bands implied. Trail means were
+rescaled by node count at each band's previous per-node rate. Digit-span and
+serial-sevens means were nudged up to reflect the easier presentation. These are
+the same kind of estimates the rest of the file already contains, and they carry
+the same caveat.
 """
 
 from __future__ import annotations
@@ -232,14 +247,42 @@ def score_verbal_fluency(
 ) -> TestScore:
     """MoCA: 1 point for 11 or more admissible words in 60 seconds.
 
-    Admissibility filtering matters — without it the count rewards repetition
-    and inflected variants of one root, which is exactly the pattern a declining
-    participant produces.
+    Admissibility filtering is the whole test. An examiner administering FAS
+    rejects non-words, proper nouns and inflected repeats as they are spoken,
+    and the published norms are counts of what survived that. Scoring anything
+    that starts with the right letter — which is what this used to do, so
+    "fnndty" counted as a word — does not just add noise: it inflates the raw
+    count against norms that assume the rejections happened, and it rewards the
+    one strategy that takes no cognitive effort at all.
+
+    The five rejection buckets, applied in order, are reported in `detail` so a
+    clinician can audit every decision rather than trust the count:
+
+      invalid      not a plain 2+ letter alphabetic string
+      wrong_letter does not begin with the target letter
+      not_a_word   no English word, in any word class or inflected form
+      proper_noun  a name of a person or place
+      repeat       already given, including as a regular inflection of one
+                   already given (fox then foxes); see lexicon.lemma for the
+                   deliberate limits on that
+
+    Wordhood is checked by ml/lexicon.py. When that is unavailable the check is
+    skipped rather than failed, and `lexicon_available` in the detail records it
+    so a degraded score is never mistaken for a clean one.
     """
+    from lexicon import available, is_english_word, is_proper_noun, lemma
+
     letter = letter.lower()
-    seen: set[str] = set()
+    checked = available()
+    seen: set[str] = set()      # base forms already credited
     valid: list[str] = []
-    rejected: dict[str, list[str]] = {"wrong_letter": [], "repeat": [], "invalid": []}
+    rejected: dict[str, list[str]] = {
+        "invalid": [],
+        "wrong_letter": [],
+        "not_a_word": [],
+        "proper_noun": [],
+        "repeat": [],
+    }
 
     for w in words:
         w = w.strip().lower()
@@ -251,10 +294,20 @@ def score_verbal_fluency(
         if not w.startswith(letter):
             rejected["wrong_letter"].append(w)
             continue
-        if w in seen:
+        if not is_english_word(w):
+            rejected["not_a_word"].append(w)
+            continue
+        if is_proper_noun(w):
+            rejected["proper_noun"].append(w)
+            continue
+        # Collapse to a base form before the repeat check, so fox/foxes counts
+        # once. With no lexicon, lemma() is the identity and this degrades to
+        # the exact-duplicate check it replaces.
+        root = lemma(w)
+        if root in seen or w in seen:
             rejected["repeat"].append(w)
             continue
-        seen.add(w)
+        seen.add(root)
         valid.append(w)
 
     count = len(valid)
@@ -269,6 +322,9 @@ def score_verbal_fluency(
             "rejected": rejected,
             "duration_seconds": duration_s,
             "moca_threshold": 11,
+            # False means wordhood and proper-noun checks were skipped, so the
+            # count is an upper bound. The results page surfaces this.
+            "lexicon_available": checked,
         },
     )
 
@@ -287,60 +343,77 @@ def score_verbal_fluency(
 #
 # Each band's mean/sd describes performance on the stimuli THAT BAND ACTUALLY
 # RECEIVES, not on some common version of the test. A younger user gets more
-# memory targets, a deeper digit-span ladder, a 14-node trail and a serial-sevens
-# start that forces borrows; their norm is referenced to that harder variant.
-# Changing a tier's parameters in stimuli.py without re-estimating its band here
-# will silently mis-score everyone in that band — most likely by making healthy
-# young users look impaired, because they would be measured against a norm set
-# for an easier test.
+# memory targets, a longer trail and faster digits; their norm is referenced to
+# that harder variant. Changing a tier's parameters in stimuli.py without
+# re-estimating its band here will silently mis-score everyone in that band —
+# in whichever direction the change went. Making the test harder without
+# re-estimating flags healthy people as declining; making it EASIER without
+# re-estimating is worse, because it quietly clears people who should have been
+# referred. test_typical_performer_scores_z_near_zero_in_every_tier is the guard.
 NORMS: dict[str, dict] = {
     "memory_recognition": {  # hits, out of a tier-dependent number of targets
-        # SDs on the 7-target tiers are wider than the 5-target one: recognition
-        # hit counts spread out as the list lengthens, and a tight SD against a
-        # score that can hit the floor manufactures implausible z-values.
+        # Means sit at roughly 85-90% of the target count — the hit rate the
+        # previous bands implied, carried across to the shorter lists. SDs are a
+        # little under one item: tighter than that, against a bounded score,
+        # manufactures implausible z-values at the floor.
+        #
+        # A mean must stay BELOW the target count or a perfect score reads as
+        # below average. test_a_ceiling_score_is_never_penalised enforces it.
         "higher_is_better": True,
         "bands": {
-            (18, 39): (6.0, 1.3),    # 7 targets, 11s study, 25s delay
-            (40, 59): (6.1, 1.3),    # 7 targets, 11s study, 20s delay
-            (60, 74): (4.3, 0.9),    # 5 targets — unchanged
-            (75, 120): (3.4, 0.8),   # 4 targets, 10s study
+            (18, 39): (5.3, 1.0),    # 6 targets, 12s study, 15s delay
+            (40, 59): (4.4, 0.9),    # 5 targets, 10s study, 12s delay
+            (60, 74): (3.5, 0.8),    # 4 targets, 8s study, 10s delay
+            (75, 120): (3.4, 0.8),   # 4 targets, 10s study, 8s delay
         },
     },
     "trail_making_b": {  # seconds to complete
+        # Rescaled by node count at each band's own previous per-node rate
+        # (2.4 s/node at 18-39 rising to 4.5 s/node at 75+), so the expected
+        # pace per node is unchanged and only the trail got shorter.
         "higher_is_better": False,
         "bands": {
-            (18, 39): (34.0, 11.0),  # 14 nodes
-            (40, 59): (39.0, 13.0),  # 14 nodes
-            (60, 74): (32.0, 13.0),  # 10 nodes — unchanged
-            (75, 120): (45.0, 20.0),  # 10 nodes — unchanged
+            (18, 39): (29.0, 10.0),  # 12 nodes
+            (40, 59): (28.0, 10.0),  # 10 nodes
+            (60, 74): (26.0, 11.0),  # 8 nodes
+            (75, 120): (36.0, 16.0),  # 8 nodes
         },
     },
     "serial_sevens": {  # number of correct subtractions, always out of 5
+        # No longer tiered — every band now starts from 100. The two older bands
+        # were already normed against that task and are unchanged; the two
+        # younger ones moved up off the 193 start they used to sit.
         "higher_is_better": True,
         "bands": {
-            (18, 39): (4.3, 1.0),    # from 193
-            (40, 59): (4.1, 1.1),    # from 193
+            (18, 39): (4.5, 0.9),    # from 100 (was 4.3 against a 193 start)
+            (40, 59): (4.4, 1.0),    # from 100 (was 4.1 against a 193 start)
             (60, 74): (4.1, 1.2),    # from 100 — unchanged
             (75, 120): (3.6, 1.5),   # from 100 — unchanged
         },
     },
     "digit_span_backward": {  # longest span reproduced correctly
-        # Re-referenced when the ladders were shortened. Leaving the old means in
-        # place would have penalised a PERFECT score: on a 2-rung ladder the best
-        # achievable raw is 4, against a mean of 4.6, so a flawless performance
-        # would have scored z = -0.50. A norm must never sit above the ceiling of
-        # the test it norms.
+        # Every band now runs the same 3-4-5 ladder and differs only in how long
+        # each digit is shown, so the means differ by age alone. All four sit
+        # below the ladder's ceiling of 5 — a norm above the ceiling would
+        # penalise a PERFECT score, which is how the previous 4-rung band came
+        # to score a flawless run at z = -0.50.
         "higher_is_better": True,
         "bands": {
-            (18, 39): (4.8, 1.1),    # ladder 3-6, 4 rounds
-            (40, 59): (4.2, 0.9),    # ladder 3-5, 3 rounds
-            (60, 74): (4.0, 0.9),    # ladder 3-5, 3 rounds
-            (75, 120): (3.7, 0.9),   # ladder 3-5, 3 rounds
+            (18, 39): (4.5, 0.9),    # ladder 3-5, digits at 1200ms
+            (40, 59): (4.3, 0.9),    # ladder 3-5, digits at 1300ms
+            (60, 74): (4.1, 0.9),    # ladder 3-5, digits at 1400ms
+            (75, 120): (3.9, 1.0),   # ladder 3-5, digits at 1500ms
         },
     },
     "verbal_fluency": {  # admissible words in 60s
         # Not tiered — every band sits the identical 60-second task, so this is a
         # straight split of the old 18-59 band and involves no re-referencing.
+        #
+        # Unchanged by the admissibility fix, and that is the point. These are
+        # published FAS figures, which count only what an examiner accepted.
+        # Scoring used to credit non-words and proper nouns, so raw counts came
+        # in ABOVE what the norms describe and everyone read slightly high;
+        # rejecting them properly moves the measure onto the norm, not off it.
         "higher_is_better": True,
         "bands": {
             (18, 39): (17.0, 4.9),

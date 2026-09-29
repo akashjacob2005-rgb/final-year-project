@@ -4,15 +4,18 @@ import { useEffect, useRef, useState } from 'react'
  * Test 5 — Digit span backward (working memory).
  *
  * Digits are shown one at a time, then must be typed in reverse order. Trials
- * get longer (3, 4, 5, 6 digits).
+ * get longer (3, 4, 5 digits).
  *
  * Digits are presented sequentially rather than all at once so the task loads
  * working memory instead of visual scanning — the whole string on screen could
  * simply be read backwards.
+ *
+ * How long each digit stays up is the difficulty knob and comes from `spec` —
+ * older tiers get more time. See backend/app/ml/stimuli.py.
  */
 export default function DigitSpanBackward({ spec, onComplete }) {
   const trials = spec?.trials ?? []
-  const intervalMs = spec?.digit_interval_ms ?? 1000
+  const intervalMs = spec?.digit_interval_ms ?? 1400
 
   const [trialIndex, setTrialIndex] = useState(0)
   const [phase, setPhase] = useState('intro') // intro | show | recall | done

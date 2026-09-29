@@ -18,8 +18,28 @@ backend file is not modified, and does not need to be; it has no relative
 imports, so it is importable on its own.
 
 Labels and grouping come from the filesystem, so no CHAT parsing is required:
-    media/Control/cookie/002-1.mp3  ->  label 0, participant "002", visit 1
-    media/Dementia/cookie/017-0.mp3 ->  label 1, participant "017", visit 0
+    media/Control/cookie/002-1.wav  ->  label 0, participant "002", visit 1
+    media/Dementia/cookie/017-0.wav ->  label 1, participant "017", visit 0
+
+PARTICIPANT 172 APPEARS IN BOTH GROUPS, AND THAT IS CORRECT
+ml/census_pitt.py flags any ID present under both Control and Dementia, because a
+bare-digit key would merge two different people into one CV group. For Pitt there
+is exactly one such ID, and the CHAT headers resolve it — same person, converted:
+
+    Control/172-0    72;  female  Control  MMSE 27
+    Dementia/172-1   73;  female  MCI      MMSE 24
+    Dementia/172-2   74;  female  MCI
+    Dementia/172-3   75;  female  MCI
+
+Ages increment with the visit number and sex is constant, so this is one woman
+followed across four years who converted during the study. The grouping key must
+therefore stay the bare digits: qualifying it by group would place her early
+visits in train and her later ones in test, which is precisely the participant
+leak StratifiedGroupKFold exists to prevent. Her label legitimately differs
+per visit, which grouped CV tolerates — a group may carry mixed labels.
+
+Note also that the "Dementia" folder contains MCI cases, not only probable AD, so
+the positive class is "the DementiaBank dementia group", not "has dementia".
 """
 
 from __future__ import annotations
@@ -36,8 +56,16 @@ HERE = Path(__file__).parent
 REPO = HERE.parent
 BACKEND_ML = REPO / "backend" / "app" / "ml"
 
+sys.path.insert(0, str(HERE))
+from download_pitt import MEDIA_EXTS, MIN_AUDIO_BYTES  # noqa: E402
+
 PITT = HERE / "data" / "pitt"
-MEDIA = PITT / "media"
+MEDIA_RAW = PITT / "media"
+# Investigator speech removed (ml/par_audio.py). Preferred when present: the raw
+# recordings are interviews, and the examiner talks ~3x more with dementia
+# participants, so training on raw audio lets the model score the condition by
+# detecting how much the EXAMINER spoke. See par_audio.py's docstring.
+MEDIA_PAR = PITT / "media_par"
 ASR_CACHE = PITT / "asr"
 DATASET = PITT / "dataset.csv"
 
@@ -110,10 +138,31 @@ def main() -> int:
     ap.add_argument("--force", action="store_true", help="ignore cached transcripts")
     args = ap.parse_args()
 
-    if not MEDIA.exists():
+    if MEDIA_PAR.is_dir() and any(MEDIA_PAR.rglob("*.wav")):
+        MEDIA = MEDIA_PAR
+        print("Using participant-only audio (ml/par_audio.py output)\n")
+    elif MEDIA_RAW.exists():
+        MEDIA = MEDIA_RAW
+        print(
+            "WARNING: using RAW audio, which still contains the investigator's\n"
+            "         speech. That confound is class-correlated (the examiner\n"
+            "         talks ~3x more with dementia participants), so the model can\n"
+            "         score the condition by detecting the examiner. Run\n"
+            "         ml/par_audio.py first, then build with --force.\n"
+        )
+    else:
         raise SystemExit("No audio found. Run: python ml/download_pitt.py")
 
-    audio = sorted(p for p in MEDIA.rglob("*.mp3") if p.stat().st_size > 0)
+    # Pitt ships WAV; MP3 is kept as a candidate so another corpus still works.
+    # The size floor rejects the 11-byte stubs media.talkbank.org returns for a
+    # rangeless GET (see download_pitt.FULL_RANGE) — Whisper would either fail or
+    # return empty text for every one of them.
+    audio = sorted(
+        p
+        for ext in MEDIA_EXTS
+        for p in MEDIA.rglob(f"*{ext}")
+        if p.stat().st_size >= MIN_AUDIO_BYTES
+    )
     rows = [(p, _meta(p)) for p in audio]
     rows = [(p, m) for p, m in rows if m][: args.limit]
     if not rows:
@@ -159,6 +208,13 @@ def main() -> int:
                 **m,
                 "transcript": data.get("transcript", ""),
                 "raw_transcript": data.get("raw_transcript", ""),
+                # Same words, with hesitation marked where it fell. Cache entries
+                # written before the encoder existed have no marked text and the
+                # word timestamps needed to rebuild it are not cached, so they
+                # degrade to the unmarked transcript. Use --force to re-transcribe
+                # if the dataset mixes both.
+                "transcript_pauses": data.get("transcript_pauses")
+                or data.get("transcript", ""),
                 **{k: timing.get(k, 0.0) for k in timing_keys},
             }
         )

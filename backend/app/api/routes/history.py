@@ -202,8 +202,35 @@ def model_info():
     if not metrics:
         return {"available": False, "message": "Model has not been trained yet"}
 
-    return {
+    out = {
         "available": True,
+        **_summarise(metrics),
+    }
+
+    # The audio-trained model, when deployed, is what actually scores recordings.
+    # Reported alongside rather than instead of the text model: they are evaluated
+    # on different corpora under different CV schemes, so their headline numbers
+    # are not comparable and presenting one figure would imply that they are.
+    audio = language_model.audio_model_metrics()
+    if audio:
+        out["audio"] = {
+            **_summarise(audio),
+            "scores": "picture-description recordings",
+            # The grouped-vs-ungrouped gap. Published deliberately: it quantifies
+            # how much the text model's own figure is likely inflated by the
+            # participant leakage its corpus could not detect.
+            "leakage_demonstration": audio.get("leakage_demonstration"),
+            "pause_marker_check": audio.get("pause_marker_check"),
+        }
+        out["scores"] = "typed transcripts"
+
+    return out
+
+
+def _summarise(metrics: dict) -> dict:
+    """Shared shape for both metrics files — train_audio_model.evaluate emits the
+    same per-arm keys as train_language_model, so one summariser covers both."""
+    return {
         "deployed_model": metrics.get("deployed_model"),
         "deployed_because": metrics.get("deployed_because"),
         "evaluation": metrics.get("evaluation"),

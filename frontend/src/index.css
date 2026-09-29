@@ -285,7 +285,12 @@ textarea.input { resize: vertical; min-height: 130px; line-height: 1.6; }
   25% { transform: translate(-58%,-50%); }
   75% { transform: translate(-42%,-50%); }
 }
-.trail-line { position: absolute; inset: 0; pointer-events: none; }
+/* width/height are load-bearing, not belt-and-braces. An <svg> is a replaced
+   element: with width/height auto it falls back to its default intrinsic box
+   (300px) and `inset: 0` cannot stretch it, so the 0-100 viewBox mapped onto a
+   300px square while the nodes were positioned against the full canvas. The
+   lines rendered bunched in the top-left, connecting nothing. */
+.trail-line { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
 /* serial sevens / digit span */
 .chain { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: center; }

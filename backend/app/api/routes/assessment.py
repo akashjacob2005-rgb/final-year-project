@@ -171,6 +171,27 @@ def _completed_count(db: Session, session_id: int) -> int:
     )
 
 
+def _score_transcript(
+    transcript: str, transcript_pauses: str | None, timing: dict | None
+) -> dict:
+    """Pick the model whose inputs this submission actually has.
+
+    The audio-trained model (ml/train_audio_model.py) learns speech timing as a
+    predictor and is fitted on Whisper output, so it is the right model whenever a
+    recording exists — that pairing is what removes the train/serve domain shift.
+    It cannot score a typed transcript: timing would have to be invented, and a
+    zeroed timing vector standardises to "spoke 0 words in 0 seconds", which
+    distorts the probability rather than just weakening it.
+
+    So: recording -> audio model, typed text -> text model. A deployment without
+    the audio artifact falls back to the text model rather than failing, which is
+    also what keeps the existing tests and any older session meaningful.
+    """
+    if timing and language_model.audio_available():
+        return language_model.predict_audio(transcript, transcript_pauses, timing)
+    return language_model.predict(transcript)
+
+
 def _store_language_result(
     db: Session,
     s: AssessmentSession,
@@ -179,9 +200,10 @@ def _store_language_result(
     timing: dict | None,
     duration_ms: int | None,
     audio: dict | None = None,
+    transcript_pauses: str | None = None,
 ) -> dict:
     """Run the trained language model and persist the outcome."""
-    prediction = language_model.predict(transcript)
+    prediction = _score_transcript(transcript, transcript_pauses, timing)
 
     row = _upsert_result(
         db,
@@ -190,6 +212,7 @@ def _store_language_result(
         raw_response={
             "transcript": transcript,
             "raw_transcript": raw_transcript,
+            "transcript_pauses": transcript_pauses or "",
             "timing": timing or {},
         },
         raw_measure=prediction.get("probability"),
@@ -202,6 +225,12 @@ def _store_language_result(
             "word_count": prediction.get("word_count"),
             "contributions": prediction.get("contributions", []),
             "timing": timing or {},
+            # Which model produced this score. Stored per result because the two
+            # coexist: a session recorded before the audio artifact was deployed,
+            # or submitted as typed text, is scored by the text model, and the
+            # results page should not imply otherwise.
+            "model": prediction.get("model", "text"),
+            "model_version": prediction.get("model_version"),
         },
         duration_ms=duration_ms,
     )
@@ -280,6 +309,9 @@ def submit_audio(
             "mime_type": file.content_type,
             "size_bytes": len(data),
         },
+        # Hesitation marked where it fell. Only the audio model's vectorizer uses
+        # this, and only if it was fitted on it — see language_model.predict_audio.
+        transcript_pauses=stt.get("transcript_pauses"),
     )
 
     return {
@@ -290,6 +322,7 @@ def submit_audio(
             "available": prediction["available"],
             "reason": prediction.get("reason"),
             "word_count": prediction.get("word_count"),
+            "model": prediction.get("model", "text"),
         },
         "completed_tests": _completed_count(db, s.id),
         "total_tests": TOTAL_TESTS,
@@ -306,7 +339,9 @@ def submit_transcript(
     """Typed fallback when the browser cannot record audio.
 
     No speech-timing features exist on this path, so the timing panel is simply
-    absent rather than filled with zeros that would read as pathological.
+    absent rather than filled with zeros that would read as pathological. For the
+    same reason this path is scored by the text-only model even when the
+    audio-trained one is deployed — see _score_transcript.
     """
     s = _get_session(session_id, user, db)
     _require_open(s)
@@ -327,6 +362,7 @@ def submit_transcript(
             "available": prediction["available"],
             "reason": prediction.get("reason"),
             "word_count": prediction.get("word_count"),
+            "model": prediction.get("model", "text"),
         },
         "completed_tests": _completed_count(db, s.id),
         "total_tests": TOTAL_TESTS,
@@ -367,6 +403,10 @@ def complete_assessment(
             "contributions": (language_row.detail_json or {}).get("contributions", []),
             "timing": (language_row.detail_json or {}).get("timing", {}),
             "transcript": (language_row.raw_response or {}).get("raw_transcript"),
+            # Defaults to "text" so sessions stored before the audio model existed
+            # keep describing themselves correctly — for those, the timing panel
+            # really was descriptive only.
+            "model": (language_row.detail_json or {}).get("model", "text"),
         }
     elif language_row:
         language_payload = {
@@ -421,6 +461,7 @@ def get_result(
             "contributions": d.get("contributions", []),
             "timing": d.get("timing", {}),
             "transcript": (language_row.raw_response or {}).get("raw_transcript"),
+            "model": d.get("model", "text"),
         }
 
     return AssessmentResult(

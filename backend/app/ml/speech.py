@@ -1,15 +1,24 @@
 """Speech-to-text and speech-timing features for the picture-description test.
 
-Two distinct things happen here, and the difference matters for how results are
-reported:
+Two distinct things happen here, and what becomes of each depends on which model
+is deployed:
 
-1. TRANSCRIPTION feeds the trained language model. That model's metrics are
-   real (see ml/artifacts/metrics.json).
-2. TIMING FEATURES (pause rate, hesitation, speech rate) are computed from the
-   audio and reported DESCRIPTIVELY ONLY. The DementiaBank mirror we trained on
-   is text-only with no audio, so these features could not be trained or
-   validated. They are shown to the user as observations, never as learned
-   predictors, and they do not enter the risk calculation.
+1. TRANSCRIPTION feeds the trained model. Metrics in ml/artifacts/metrics.json
+   (text model) and ml/artifacts/metrics_audio.json (audio model).
+2. TIMING FEATURES (pause rate, hesitation, speech rate) are computed from word
+   timestamps. Where they go depends on the artifact:
+
+   * audio_model.joblib deployed -> they are LEARNED PREDICTORS. Trained on real
+     DementiaBank Pitt audio, so a pause-rate weight is as validated as a
+     pronoun-ratio one, and they enter the risk calculation.
+   * text model only -> DESCRIPTIVE ONLY, as before. That model's corpus is the
+     text-only HuggingFace mirror with no audio, so nothing could be fitted
+     against these features and they are shown as observations, never as
+     predictors.
+
+   language_model._score_transcript picks between the two, and the per-result
+   `model` field records which one ran. Do not describe timing features to the
+   user as predictive without checking that field.
 """
 
 from __future__ import annotations
@@ -25,6 +34,11 @@ COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE", "int8")
 # A silence longer than this between consecutive words counts as a pause.
 PAUSE_THRESHOLD_S = 0.3
 LONG_PAUSE_THRESHOLD_S = 1.0
+
+# Markers spliced into the transcript by pause_encoded_transcript(). See its
+# docstring for why these are bare words and not bracketed markup.
+SHORT_PAUSE_TOKEN = "shortpause"
+LONG_PAUSE_TOKEN = "longpause"
 
 _lock = threading.Lock()
 
@@ -70,6 +84,38 @@ def normalise_transcript(text: str) -> str:
     t = re.sub(r"[^a-z'.\s]", " ", t)
     t = re.sub(r"\s+", " ", t).strip()
     return t
+
+
+def pause_encoded_transcript(words: list[dict]) -> str:
+    """Rewrite the transcript with hesitation marked where it actually happened.
+
+    The timing features below summarise pauses into rates and counts, which
+    throws away *where* the silence fell. Someone pausing before every noun
+    ("the ... uh ... thing") is a different clinical picture from someone who
+    pauses once to gather a thought, yet both produce the same pause_ratio.
+    Splicing a marker into the word sequence lets the n-gram model learn
+    "hesitated before this word" directly: TFIDF_KWARGS already sets
+    ngram_range=(1, 2), so `longpause cookie` becomes a feature in its own right.
+
+    Markers are bare alphabetic tokens rather than <angle-bracket> markup because
+    normalise_transcript keeps only [a-z'.\\s], and scikit-learn's default
+    token_pattern is \\b\\w\\w+\\b — either would strip the brackets anyway.
+    Neither word occurs in natural Cookie Theft descriptions.
+
+    Thresholds are the module's existing ones, so the markers and the timing
+    scalars can never disagree about what counts as a pause.
+    """
+    if not words:
+        return ""
+    parts = [words[0]["word"]]
+    for prev, cur in zip(words, words[1:]):
+        gap = cur["start"] - prev["end"]
+        if gap >= LONG_PAUSE_THRESHOLD_S:
+            parts.append(LONG_PAUSE_TOKEN)
+        elif gap >= PAUSE_THRESHOLD_S:
+            parts.append(SHORT_PAUSE_TOKEN)
+        parts.append(cur["word"])
+    return normalise_transcript(" ".join(parts))
 
 
 def _timing_features(words: list[dict], duration: float) -> dict:
@@ -139,9 +185,13 @@ def transcribe(audio_path: str) -> dict:
     if words:
         duration = max(duration, words[-1]["end"])
 
+    normalised = normalise_transcript(raw)
     return {
         "raw_transcript": raw,
-        "transcript": normalise_transcript(raw),
+        "transcript": normalised,
+        # Falls back to the plain transcript when word timestamps are missing, so
+        # this column is never silently empty for a recording that has words.
+        "transcript_pauses": pause_encoded_transcript(words) or normalised,
         "language": getattr(info, "language", "en"),
         "timing": _timing_features(words, duration),
     }

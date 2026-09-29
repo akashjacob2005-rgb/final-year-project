@@ -9,6 +9,12 @@ import { useEffect, useRef, useState } from 'react'
  * Duplicates are flagged in the UI but still submitted. The server does the
  * real filtering, and *how many* duplicates a person produces is itself
  * informative — repeating without noticing is a decline signal.
+ *
+ * Nothing here judges admissibility. Scoring rejects invented words, proper
+ * nouns and inflected repeats against a lexicon the browser does not have, so
+ * this component must not imply a word has been accepted — see the counter
+ * below. The breakdown of what was dropped, and why, appears on the results
+ * page.
  */
 export default function VerbalFluency({ spec, onComplete }) {
   const letter = (spec?.letter ?? 'F').toUpperCase()
@@ -88,8 +94,12 @@ export default function VerbalFluency({ spec, onComplete }) {
         ) : (
           <>
             <div className="row between mb-2">
+              {/* "entered", not "valid". The browser can only check the first
+                  letter and exact repeats; whether a word is a real word and not
+                  a name is decided server-side against a lexicon. Calling this
+                  count valid promised a verdict this component cannot reach. */}
               <span className="muted small">
-                {uniqueValid} valid word{uniqueValid === 1 ? '' : 's'}
+                {uniqueValid} word{uniqueValid === 1 ? '' : 's'} entered
               </span>
               <span
                 className="rec-timer"

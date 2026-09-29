@@ -109,6 +109,18 @@ def test_refresh_rotates_session(auth_client):
 # --------------------------------------------------------------------------
 # assessment
 # --------------------------------------------------------------------------
+# Twelve admissible words for each letter stimuli.FLUENCY_LETTERS can choose:
+# real, common, no proper nouns, and no two that share a stem.
+_FLUENT_WORDS = {
+    "F": ["fish", "fast", "father", "friend", "flower", "forest",
+          "farm", "funny", "fence", "floor", "frame", "fruit"],
+    "A": ["apple", "answer", "animal", "arrow", "autumn", "anchor",
+          "acorn", "album", "angry", "apron", "attic", "avenue"],
+    "S": ["sun", "sand", "storm", "silver", "school", "spoon",
+          "street", "summer", "stone", "shirt", "snake", "sugar"],
+}
+
+
 def _perfect_submissions(stimuli: dict) -> list[dict]:
     """Responses a cognitively healthy user would produce."""
     trials = [
@@ -141,13 +153,13 @@ def _perfect_submissions(stimuli: dict) -> list[dict]:
         },
         {
             "test_name": "verbal_fluency",
-            "raw_response": {
-                "words": [
-                    stimuli["verbal_fluency"]["letter"].lower() + s
-                    for s in ["ish", "ast", "ather", "riend", "lower", "orest",
-                              "arm", "unny", "ence", "loor", "rame", "ruit"]
-                ]
-            },
+            # Real words, one list per possible letter. These used to be built as
+            # letter + suffix, which produced "aather" and "sather" whenever the
+            # randomly chosen letter was not F. That passed only because scoring
+            # accepted any letter string; now that it checks a lexicon, a fake
+            # word scores zero and the whole "healthy user" fixture would have
+            # failed on two runs in three.
+            "raw_response": {"words": _FLUENT_WORDS[stimuli["verbal_fluency"]["letter"].upper()]},
             "duration_ms": 60000,
         },
     ]
@@ -176,8 +188,9 @@ def test_full_assessment_flow(auth_client):
 
     # The expected trail path must NOT be handed to the client.
     assert "expected" not in stimuli["trail_making_b"]
-    assert len(stimuli["memory_recognition"]["targets"]) == 5
-    assert len(stimuli["memory_recognition"]["grid"]) == 15
+    # USER is 68, which is the "moderate" tier: 4 targets among 8 distractors.
+    assert len(stimuli["memory_recognition"]["targets"]) == 4
+    assert len(stimuli["memory_recognition"]["grid"]) == 12
 
     # Re-read the server-side stimuli (with answers) for building responses.
     from app.database import SessionLocal
@@ -313,6 +326,77 @@ def test_model_info_reports_real_metrics(client):
         assert body["caveats"]
 
 
+def test_model_info_omits_audio_block_when_not_trained(client, monkeypatch):
+    """No metrics_audio.json -> no 'audio' key, rather than an empty one.
+
+    The /model page branches on this to decide whether speech timing is described
+    as predictive, so an empty-but-present block would mislabel the timing panel.
+    """
+    from app.ml import language_model as lm
+
+    lm.audio_model_metrics.cache_clear()
+    monkeypatch.setattr(
+        lm.paths, "AUDIO_METRICS_PATH", Path(tempfile.mkdtemp()) / "absent.json"
+    )
+    try:
+        body = client.get("/api/history/model-info").json()
+        assert "audio" not in body
+    finally:
+        lm.audio_model_metrics.cache_clear()
+
+
+def test_model_info_reports_both_models_when_audio_is_trained(client, monkeypatch):
+    """Both models are summarised, and the leakage figure is published.
+
+    Exercises history._summarise over the audio metrics file, whose per-arm keys
+    are written by ml/train_audio_model.py::evaluate.
+    """
+    import json
+
+    from app.ml import language_model as lm
+
+    audio_metrics = {
+        "deployed_model": "text + timing",
+        "evaluation": "StratifiedGroupKFold(5) x 4 seeds, grouped by participant",
+        "dataset": {"n_total": 400, "n_participants": 170},
+        "caveats": ["small corpus"],
+        "all_models": [
+            {
+                "name": "text + timing",
+                "roc_auc_mean": 0.781,
+                "roc_auc_ci95": [0.74, 0.82],
+                "accuracy_mean": 0.72,
+                "sensitivity_mean": 0.70,
+                "specificity_mean": 0.74,
+            }
+        ],
+        "leakage_demonstration": {
+            "ungrouped_roc_auc": 0.84,
+            "grouped_roc_auc": 0.781,
+            "inflation": 0.059,
+        },
+        "pause_marker_check": {"verdict": "inconclusive at this sample size"},
+    }
+    path = Path(tempfile.mkdtemp()) / "metrics_audio.json"
+    path.write_text(json.dumps(audio_metrics))
+
+    lm.audio_model_metrics.cache_clear()
+    monkeypatch.setattr(lm.paths, "AUDIO_METRICS_PATH", path)
+    try:
+        body = client.get("/api/history/model-info").json()
+        assert body["audio"]["deployed_model"] == "text + timing"
+        assert body["audio"]["models"][0]["roc_auc"] == 0.781
+        assert body["audio"]["dataset"]["n_participants"] == 170
+        # the honest-vs-inflated gap must reach the page, not just the log
+        assert body["audio"]["leakage_demonstration"]["inflation"] == 0.059
+        assert body["audio"]["pause_marker_check"]["verdict"]
+        # and the two are distinguished by what they score
+        assert body["audio"]["scores"] == "picture-description recordings"
+        assert body["scores"] == "typed transcripts"
+    finally:
+        lm.audio_model_metrics.cache_clear()
+
+
 def test_logout_clears_session(auth_client):
     auth_client.post(
         "/api/auth/login", json={"email": USER["email"], "password": USER["password"]}
@@ -419,6 +503,43 @@ def test_typical_performer_scores_z_near_zero_in_every_tier():
             assert abs(z) < 0.01, (test, age, z)
 
 
+def test_a_ceiling_score_is_never_penalised():
+    """A flawless performance must never score below average.
+
+    The counterpart to test_typical_performer_scores_z_near_zero_in_every_tier.
+    That one catches a norm set for an easier test than the user sat; this one
+    catches a norm set ABOVE the highest score the task can produce, which is
+    how a 4-rung digit ladder once scored a perfect run at z = -0.50.
+
+    Only applies to the bounded, higher-is-better tests. Verbal fluency has no
+    ceiling, and trail making is scored on time. Digit span has its own version
+    of this check in test_no_norm_sits_above_its_own_ceiling.
+    """
+    for tier, age in TIER_AGES.items():
+        params = stimuli.TIER_PARAMS[tier]
+        ceilings = {
+            "memory_recognition": float(params["memory_targets"]),
+            "serial_sevens": 5.0,
+        }
+        for test, best_possible in ceilings.items():
+            z = scoring.normative_z(test, best_possible, age, education_years=14)
+            assert z > 0, (tier, test, best_possible, z)
+
+
+def test_digit_presentation_slows_as_age_increases():
+    """Older tiers get longer on each digit — the pacing IS the difficulty knob.
+
+    The ladder is identical in every tier now, so if this ordering ever
+    inverted, the oldest users would be sitting the hardest version of the test
+    while being scored against the easiest norm.
+    """
+    intervals = [
+        stimuli.TIER_PARAMS[t]["digit_interval_ms"]
+        for t in ("demanding", "challenging", "moderate", "standard")
+    ]
+    assert intervals == sorted(intervals), intervals
+
+
 def test_memory_encoding_time_is_feasible():
     """Study time must scale with the number of objects.
 
@@ -477,9 +598,125 @@ def test_session_records_the_tier_it_was_sat_at(auth_client):
     )
     r = auth_client.post("/api/assessment/start")
     assert r.status_code == 201
-    # USER is 68 -> moderate, the app's original difficulty.
+    # USER is 68 -> moderate.
     assert r.json()["stimuli"]["tier"] == "moderate"
-    assert len(r.json()["stimuli"]["memory_recognition"]["targets"]) == 5
+    assert len(r.json()["stimuli"]["memory_recognition"]["targets"]) == 4
+
+
+# --------------------------------------------------------------------------
+# verbal fluency admissibility
+#
+# Scoring used to accept anything matching ^[a-z]{2,}$, so "fnndty" counted as
+# a word. That rewards the one strategy that costs no cognitive effort, and it
+# inflates the raw count against FAS norms that assume an examiner rejected
+# non-words, proper nouns and inflected repeats.
+# --------------------------------------------------------------------------
+import lexicon  # noqa: E402
+
+
+def test_lexicon_is_actually_available():
+    """The rest of this section is vacuous if the tables did not load.
+
+    score_verbal_fluency fails open by design, so a broken install degrades to
+    the old lenient behaviour rather than crashing. That is right in production
+    and useless in a test — this asserts the real path is under test.
+    """
+    assert lexicon.available()
+
+
+def test_invented_words_are_rejected():
+    """The reported bug: 'fnndty' scored exactly like 'flower'."""
+    s = scoring.score_verbal_fluency(["fnndty", "frrr", "fdsa", "flower"], letter="f")
+    assert s.detail["valid_words"] == ["flower"]
+    assert set(s.detail["rejected"]["not_a_word"]) == {"fnndty", "frrr", "fdsa"}
+    assert s.raw == 1.0
+
+
+def test_real_words_survive_including_inflections_and_modern_ones():
+    """The error that matters more than a false accept.
+
+    Rejecting a word the participant genuinely produced makes a healthy person
+    look impaired, so the lexicon has to know plurals, tenses and words younger
+    than the dictionaries it is built from.
+    """
+    words = ["fox", "flowers", "finding", "fastest", "fridge", "fax", "fish"]
+    s = scoring.score_verbal_fluency(words, letter="f")
+    assert s.detail["valid_count"] == len(words), s.detail["rejected"]
+
+
+def test_names_of_people_and_places_are_rejected():
+    """The instruction on screen promises this; scoring never enforced it."""
+    s = scoring.score_verbal_fluency(
+        ["france", "florida", "spain", "sarah", "flower"], letter="f"
+    )
+    # Only the F words reach the proper-noun check; spain/sarah fail on letter.
+    assert set(s.detail["rejected"]["proper_noun"]) == {"france", "florida"}
+    assert s.detail["valid_words"] == ["flower"]
+
+
+def test_a_word_with_an_ordinary_sense_is_not_treated_as_a_name():
+    """The blocklist must not eat common nouns that are also names.
+
+    "frank" is candid, "august" is majestic, "turkey" is a bird. Blocking them
+    would cost a healthy participant real marks.
+    """
+    for word in ("frank", "fox", "flower", "fast"):
+        assert not lexicon.is_proper_noun(word), word
+    for word in ("august", "turkey", "china", "sandwich", "garden"):
+        assert not lexicon.is_proper_noun(word), word
+
+
+def test_inflected_repeats_count_once():
+    """fox then foxes is one word given twice, which is itself a decline sign."""
+    s = scoring.score_verbal_fluency(["fox", "foxes", "flower", "flower"], letter="f")
+    assert s.detail["valid_words"] == ["fox", "flower"]
+    assert s.detail["rejected"]["repeat"] == ["foxes", "flower"]
+
+
+def test_rejection_reasons_are_reported_for_audit():
+    """A clinician must be able to see every dropped word and why.
+
+    A count on its own is not reviewable, and this scorer now drops words the
+    participant will remember saying.
+    """
+    s = scoring.score_verbal_fluency(
+        ["flower", "f", "apple", "fnndty", "france", "fox", "foxes"], letter="f"
+    )
+    rejected = s.detail["rejected"]
+    assert rejected["invalid"] == ["f"]
+    assert rejected["wrong_letter"] == ["apple"]
+    assert rejected["not_a_word"] == ["fnndty"]
+    assert rejected["proper_noun"] == ["france"]
+    assert rejected["repeat"] == ["foxes"]
+    assert s.detail["lexicon_available"] is True
+    # Every word the participant offered is accounted for exactly once.
+    assert len(s.detail["valid_words"]) + sum(len(v) for v in rejected.values()) == 7
+
+
+def test_scoring_fails_open_when_the_lexicon_is_missing(monkeypatch):
+    """A missing dependency must not score a healthy person at zero.
+
+    Fail-open is deliberate, but it has to be visible: `lexicon_available`
+    False tells the results page the count is an upper bound.
+    """
+    monkeypatch.setattr(lexicon, "_tables", lambda: None)
+    lexicon.lemma.cache_clear()
+    try:
+        s = scoring.score_verbal_fluency(["fnndty", "flower", "flower"], letter="f")
+        assert s.detail["lexicon_available"] is False
+        assert s.detail["valid_words"] == ["fnndty", "flower"]   # lenient again
+        assert s.detail["rejected"]["repeat"] == ["flower"]      # but still dedupes
+    finally:
+        lexicon.lemma.cache_clear()
+
+
+def test_the_moca_threshold_is_applied_to_admissible_words_only():
+    """Ten real words plus five invented ones is a fail, not a pass."""
+    real = ["fish", "fast", "father", "friend", "flower",
+            "forest", "farm", "funny", "fence", "floor"]
+    assert scoring.score_verbal_fluency(real, letter="f").score == 0.0   # 10 < 11
+    padded = real + ["fnndty", "fzzz", "fqqq", "fxxx", "fwww"]
+    assert scoring.score_verbal_fluency(padded, letter="f").score == 0.0
 
 
 # --------------------------------------------------------------------------
@@ -721,22 +958,23 @@ def test_full_breakdown_endpoint_serves_a_completed_session(auth_client):
 
 
 def test_digit_span_round_counts():
-    """Explicit product requirement: 4 rounds under 40, 3 rounds at 40 and over.
+    """Three rounds — a 3-4-5 ladder — in every tier.
 
-    A backward span of 7-8 is well past typical adult ability (normal is about
-    4-5), so the deep ladder measured almost nobody and just felt punishing.
-    Three rounds rather than two keeps a middle grade — with only a 3-4 ladder
-    the raw score could land on just 0, 3 or 4, which is too coarse to grade
-    working memory in the older tiers that most need grading.
+    This supersedes an earlier requirement of 4 rounds under 40. Four rounds
+    necessarily means a fourth rung of 6 digits (the ladder must run 3,4,5,...
+    unbroken — see test_digit_span_ladder_always_starts_at_three), and a
+    backward span of 6 is already past typical adult ability, so that rung
+    measured almost nobody and simply felt punishing. Difficulty for the
+    younger tiers now comes from how fast the digits are shown instead.
+
+    Three rather than two is the floor, and it is a scoring constraint rather
+    than a taste one: on a 3-4 ladder the raw score can only be 0, 3 or 4,
+    which is too coarse to grade working memory with.
     """
-    rounds = {
-        tier: len(stimuli.TIER_PARAMS[tier]["digit_lengths"])
-        for tier, _, _ in stimuli.TIER_BANDS
-    }
-    assert rounds["demanding"] == 4        # 18-39
-    assert rounds["challenging"] == 3      # 40-59
-    assert rounds["moderate"] == 3         # 60-74
-    assert rounds["standard"] == 3         # 75+
+    for tier, _, _ in stimuli.TIER_BANDS:
+        lengths = stimuli.TIER_PARAMS[tier]["digit_lengths"]
+        assert lengths == [3, 4, 5], tier
+        assert max(lengths) <= stimuli.MAX_DIGIT_SPAN, tier
 
 
 def test_no_norm_sits_above_its_own_ceiling():

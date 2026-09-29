@@ -19,5 +19,12 @@ ARTIFACTS_DIR = ML_DIR / "artifacts"
 LANGUAGE_MODEL_PATH = ARTIFACTS_DIR / "language_model.joblib"
 METRICS_PATH = ARTIFACTS_DIR / "metrics.json"
 
+# The audio-trained model (ml/train_audio_model.py). Scores the picture-description
+# recording using ASR text AND speech timing, so it only applies to requests that
+# carry audio. The text-only artifact above stays the fallback for typed
+# transcripts, which have no timing to give it.
+AUDIO_MODEL_PATH = ARTIFACTS_DIR / "audio_model.joblib"
+AUDIO_METRICS_PATH = ARTIFACTS_DIR / "metrics_audio.json"
+
 if str(ML_DIR) not in sys.path:
     sys.path.insert(0, str(ML_DIR))

@@ -1,0 +1,233 @@
+{
+  "deployed_model": "text + timing",
+  "deployed_text_column": "transcript",
+  "threshold_sweep": [
+    {
+      "threshold": 0.2,
+      "sensitivity": 0.945,
+      "specificity": 0.343,
+      "youden_j": 0.288,
+      "accuracy": 0.678
+    },
+    {
+      "threshold": 0.25,
+      "sensitivity": 0.913,
+      "specificity": 0.439,
+      "youden_j": 0.353,
+      "accuracy": 0.703
+    },
+    {
+      "threshold": 0.3,
+      "sensitivity": 0.869,
+      "specificity": 0.548,
+      "youden_j": 0.416,
+      "accuracy": 0.726
+    },
+    {
+      "threshold": 0.35,
+      "sensitivity": 0.841,
+      "specificity": 0.63,
+      "youden_j": 0.471,
+      "accuracy": 0.748
+    },
+    {
+      "threshold": 0.4,
+      "sensitivity": 0.827,
+      "specificity": 0.683,
+      "youden_j": 0.51,
+      "accuracy": 0.763
+    },
+    {
+      "threshold": 0.45,
+      "sensitivity": 0.796,
+      "specificity": 0.739,
+      "youden_j": 0.535,
+      "accuracy": 0.771
+    },
+    {
+      "threshold": 0.5,
+      "sensitivity": 0.734,
+      "specificity": 0.761,
+      "youden_j": 0.494,
+      "accuracy": 0.746
+    },
+    {
+      "threshold": 0.55,
+      "sensitivity": 0.689,
+      "specificity": 0.796,
+      "youden_j": 0.484,
+      "accuracy": 0.736
+    },
+    {
+      "threshold": 0.6,
+      "sensitivity": 0.661,
+      "specificity": 0.835,
+      "youden_j": 0.496,
+      "accuracy": 0.738
+    },
+    {
+      "threshold": 0.65,
+      "sensitivity": 0.588,
+      "specificity": 0.848,
+      "youden_j": 0.436,
+      "accuracy": 0.703
+    },
+    {
+      "threshold": 0.7,
+      "sensitivity": 0.533,
+      "specificity": 0.887,
+      "youden_j": 0.42,
+      "accuracy": 0.69
+    },
+    {
+      "threshold": 0.75,
+      "sensitivity": 0.464,
+      "specificity": 0.913,
+      "youden_j": 0.377,
+      "accuracy": 0.663
+    },
+    {
+      "threshold": 0.8,
+      "sensitivity": 0.408,
+      "specificity": 0.943,
+      "youden_j": 0.352,
+      "accuracy": 0.645
+    }
+  ],
+  "threshold_note": "Sensitivity/specificity by decision threshold, computed from out-of-fold predictions. The model reports a calibrated probability; 0.5 is logistic regression's default, not a screening decision. Sensitivity matters more than specificity for a screen, so a lower threshold is defensible and should be stated rather than assumed.",
+  "evaluation": "mean over StratifiedGroupKFold(5) x 4 seeds, grouped by participant",
+  "all_models": [
+    {
+      "name": "text only (linguistic + tfidf)",
+      "mode": "text",
+      "text_column": "transcript",
+      "n_folds": 20,
+      "roc_auc_mean": 0.8084152002945896,
+      "accuracy_mean": 0.739381067961165,
+      "sensitivity_mean": 0.7291137326073804,
+      "specificity_mean": 0.7521739130434784,
+      "f1_mean": 0.75551769547497,
+      "roc_auc_std": 0.054697493433005964,
+      "accuracy_std": 0.05366633646552853,
+      "sensitivity_std": 0.08193879612815184,
+      "specificity_std": 0.08023197885383923,
+      "f1_std": 0.05527963553937133,
+      "roc_auc_ci95": [
+        0.7844429668456399,
+        0.8323874337435393
+      ]
+    },
+    {
+      "name": "timing only (how they spoke)",
+      "mode": "timing",
+      "text_column": "transcript",
+      "n_folds": 20,
+      "roc_auc_mean": 0.6395036034614271,
+      "accuracy_mean": 0.6006768110530246,
+      "sensitivity_mean": 0.5172716273442226,
+      "specificity_mean": 0.7054347826086957,
+      "f1_mean": 0.5890495035259657,
+      "roc_auc_std": 0.04168106679169868,
+      "accuracy_std": 0.035605725880469286,
+      "sensitivity_std": 0.06268594342680947,
+      "specificity_std": 0.06891681514846676,
+      "f1_std": 0.046612441124595255,
+      "roc_auc_ci95": [
+        0.6212360705121214,
+        0.6577711364107328
+      ]
+    },
+    {
+      "name": "text + timing",
+      "mode": "text+timing",
+      "text_column": "transcript",
+      "n_folds": 20,
+      "roc_auc_mean": 0.816405941765959,
+      "accuracy_mean": 0.7528986183719193,
+      "sensitivity_mean": 0.7378856624319419,
+      "specificity_mean": 0.7717391304347825,
+      "f1_mean": 0.7677169683941736,
+      "roc_auc_std": 0.04583698332102759,
+      "accuracy_std": 0.04889926925981798,
+      "sensitivity_std": 0.07435561890501245,
+      "specificity_std": 0.08118733855655282,
+      "f1_std": 0.04889363703893623,
+      "roc_auc_ci95": [
+        0.7963169980904481,
+        0.83649488544147
+      ]
+    },
+    {
+      "name": "pause-marked text",
+      "mode": "text",
+      "text_column": "transcript_pauses",
+      "n_folds": 20,
+      "roc_auc_mean": 0.8091312896183487,
+      "accuracy_mean": 0.7432318894697535,
+      "sensitivity_mean": 0.7369026013309135,
+      "specificity_mean": 0.7510869565217392,
+      "f1_mean": 0.7607386767912764,
+      "roc_auc_std": 0.05521473155481295,
+      "accuracy_std": 0.054738100000876574,
+      "sensitivity_std": 0.07564011579190161,
+      "specificity_std": 0.0868062202187711,
+      "f1_std": 0.053114172013521865,
+      "roc_auc_ci95": [
+        0.7849323665676197,
+        0.8333302126690777
+      ]
+    },
+    {
+      "name": "pause-marked text + timing",
+      "mode": "text+timing",
+      "text_column": "transcript_pauses",
+      "n_folds": 20,
+      "roc_auc_mean": 0.817030629422131,
+      "accuracy_mean": 0.7524178491411503,
+      "sensitivity_mean": 0.7361766485178464,
+      "specificity_mean": 0.7728260869565217,
+      "f1_mean": 0.7668832782706666,
+      "roc_auc_std": 0.04619578592525206,
+      "accuracy_std": 0.05159857754893025,
+      "sensitivity_std": 0.07656156684187207,
+      "specificity_std": 0.0817901758914297,
+      "f1_std": 0.051664493927820646,
+      "roc_auc_ci95": [
+        0.7967844335719643,
+        0.8372768252722977
+      ]
+    }
+  ],
+  "pause_marker_check": {
+    "unmarked_roc_auc": 0.816405941765959,
+    "pause_marked_roc_auc": 0.817030629422131,
+    "delta": 0.0006246876561719628,
+    "ci95_overlap": true,
+    "verdict": "inconclusive at this sample size (95% CIs overlap)",
+    "top_scoring_arm": "pause-marked text + timing",
+    "deployed_arm": "text + timing",
+    "deployed_simpler_on_overlap": true,
+    "explanation": "Pause markers are spliced into the transcript where the silence actually fell, so the n-gram model can learn 'hesitated before this word' instead of only an aggregate pause rate. With ~30 participants per test fold a few thousandths of AUC sit inside the noise; when the intervals overlap the comparison is reported as inconclusive rather than as an improvement."
+  },
+  "leakage_demonstration": {
+    "ungrouped_roc_auc": 0.8332521239380309,
+    "grouped_roc_auc": 0.816405941765959,
+    "inflation": 0.0168461821720719,
+    "explanation": "Pitt is longitudinal. Ungrouped cross-validation places the same participant in train and test, so the model can recognise the speaker rather than the condition. The grouped figure is the honest one."
+  },
+  "dataset": {
+    "source": "DementiaBank Pitt Cookie Theft, audio (TalkBank, restricted access)",
+    "n_total": 519,
+    "n_participants": 285,
+    "n_dementia": 289,
+    "n_control": 230,
+    "text_source": "faster-whisper base.en, same path as inference"
+  },
+  "caveats": [
+    "Small corpus, and the effective sample size is the participant count, not the session count.",
+    "Trained on picture-description speech. Valid only for that task.",
+    "Labels are diagnostic group, not severity, so this is not validated for distinguishing early decline from normal ageing.",
+    "Pitt audio is 1980s-90s clinic recordings; users record on a modern microphone in lossy Opus. Timing features derive from word timestamps and transfer across that gap reasonably; spectral voice-quality features would not, which is why none are used.",
+    "This is a screening indicator, not a diagnosis."
+  ]
+}

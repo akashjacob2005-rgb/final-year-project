@@ -15,8 +15,10 @@ imported twice is what stops training and serving from drifting apart.
 | `train_language_model.py` | Cross-validate 5 configurations, pick, calibrate, save | training |
 | `artifacts/` | Trained model + real metrics. Committed (~123KB). | inference |
 | `download_pitt.py` | Fetch the **real** Pitt corpus, with audio (credentials required) | training |
+| `census_pitt.py` | Read-only audit of what downloaded: audio coverage, class balance, participant count | training |
 | `build_dataset.py` | Transcribe that audio via the backend's own Whisper path | training |
 | `train_audio_model.py` | Train on words **and** speech timing, grouped by participant | training |
+| `lexicon.py` / `build_proper_nouns.py` | Proper-noun list used by the feature extractor | training **and** inference |
 
 ## Training on real audio (optional, separate from the above)
 
@@ -29,12 +31,49 @@ Pitt corpus:
 
 ```bash
 python ml/download_pitt.py --limit 5   # smoke test first
-python ml/download_pitt.py             # ~550 recordings
+python ml/download_pitt.py             # 552 cookie sessions, ~3.9GB, several hours
+python ml/census_pitt.py               # check what actually arrived BEFORE training
 python ml/build_dataset.py             # Whisper over all of them
 python ml/train_audio_model.py
 ```
 
-Three things to know before running it:
+Use the backend venv — it is the only one with `requests`, `faster-whisper` and
+spaCy: `backend/.venv/bin/python ml/download_pitt.py`.
+
+### TalkBank download: four ways it silently "succeeds"
+
+All four were hit for real. Each now has an explicit check, because every one of
+them produces a corpus that looks complete and cannot be trained on.
+
+1. **Placeholder credentials.** `TALKBANK_EMAIL=<you@example.com>` with the angle
+   brackets kept from the template fails as `NOT_MATCHED`, which reads like a
+   rejected account rather than a typo. Strip the brackets.
+2. **The extension is `.wav`, not `.mp3`.** Every `.mp3` URL returns a genuine 404,
+   which the downloader classifies as `missing` — the same status as a session
+   whose audio was never released. So a wrong guess looks like "this corpus has no
+   audio." See `MEDIA_EXTS`.
+3. **A GET with no `Range` header returns ELEVEN BYTES.** `media.talkbank.org`
+   answers `206` with `Content-Range: bytes 0-10/6814562`. The body begins with a
+   valid `RIFF` header, so magic-byte sniffing passes and an 11-byte file is
+   written as `ok`. See `FULL_RANGE`, and the `MIN_AUDIO_BYTES` floor that
+   `census_pitt.py` / `build_dataset.py` apply when counting "has audio".
+4. **Throttling looks like permanent absence.** The account is capped at
+   ~200-270 KB/s *in aggregate*, not per connection — a fresh connection bursts
+   near 900 KB/s for a few MB, which makes it look parallelisable. It is not.
+   Sustained 4-way concurrency got the account cut off after ~69 files, and
+   because nothing retried, 483 available sessions were recorded as
+   `error:ConnectionError`. Hence `DEFAULT_WORKERS = 2`, `MAX_ATTEMPTS`,
+   `CONSECUTIVE_FAILURE_LIMIT`, and a **non-zero exit code on an incomplete run**.
+   Do not raise the worker count.
+
+Because of (4), always re-run `download_pitt.py` until it exits 0. Completed files
+are cached, so a re-run only fetches what is still absent. `census_pitt.py` is the
+gate: it reports audio-backed sessions, class balance, and — the number that
+actually governs the error bars — **distinct participants**. Sessions are processed
+in sorted group order, so a partial run holds Control only and no positive class
+at all.
+
+Three more things to know before running it:
 
 - **Credentials.** DementiaBank is password-protected. Put `TALKBANK_EMAIL` and
   `TALKBANK_PASSWORD` in the repo-root `.env`. Request access at
@@ -43,10 +82,21 @@ Three things to know before running it:
   data-use agreement: no redistribution, and it must stay out of the Docker image
   (`Dockerfile` does `COPY ml/ ./ml/`). It is gitignored and dockerignored. Cite
   Becker et al. (1994) and acknowledge NIH AG03705 / AG05133.
-- **Nothing is wired into the app.** `train_audio_model.py` writes to
-  `audio_model.joblib`, a new filename. The backend still loads
-  `language_model.joblib` and behaves exactly as before. Deploying the new model
-  is a deliberate separate step.
+- **Both models are served, each on the path whose inputs it has.**
+  `train_audio_model.py` writes `audio_model.joblib`, a separate filename from
+  `language_model.joblib`, and the backend loads both:
+
+  | Request | Model | Why |
+  |---|---|---|
+  | `POST /{id}/audio` (a recording) | `audio_model.joblib` | has timing; trained on ASR text, so no domain shift |
+  | `POST /{id}/transcript` (typed) | `language_model.joblib` | no timing to give the audio model |
+
+  Timing is never zero-filled for the typed path: `StandardScaler` maps zeros to
+  extreme negative z-scores meaning "spoke 0 words in 0 seconds", which would
+  distort the probability rather than merely weaken it. A deployment without
+  `audio_model.joblib` falls back to the text model instead of failing, so the
+  artifact is optional. `/api/health` reports `audio_model_loaded`, and each
+  stored result records which model produced it under `detail_json.model`.
 
 Expect a **lower** ROC-AUC than the current 0.905. Two reasons, both good ones:
 the text is now real ASR output rather than clinician transcripts, and

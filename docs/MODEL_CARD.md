@@ -17,12 +17,34 @@ This model covers **one** of the six tests in NeuroGuard. The other five are
 rule-scored, and the final risk score combines both with fixed weights. See
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
+> **Two models score this test.** The classifier documented immediately below is
+> text-only and now serves just the typed-transcript fallback. Recordings — the
+> normal path — are scored by the **audio model** described later in this card,
+> which is trained on real DementiaBank audio and uses speech timing as a learned
+> predictor. Their headline numbers are **not comparable**: they use different
+> corpora and different cross-validation schemes. `/api/health` reports which
+> artifacts are loaded, and each stored result records which model produced it.
+
 ---
 
 ## Training data
 
 **DementiaBank Pitt corpus** — "Cookie Theft" picture descriptions, obtained
-from the ungated `MearaHe/dementiabank` mirror on Hugging Face.
+**not from TalkBank directly** but from the ungated third-party mirror
+[`MearaHe/dementiabank`](https://huggingface.co/datasets/MearaHe/dementiabank) on
+Hugging Face (`ml/download_data.py`).
+
+That distinction is part of the provenance, not a footnote. The mirror is a
+redistribution of a corpus that is normally access-controlled, so its
+preprocessing cannot be verified against the original CHAT files, and the 498
+transcripts here cannot be traced back to the sessions they came from. Becker et
+al. (1994) is still the required citation, and NIH AG03705 / AG05133 still
+require acknowledgement, however the data was obtained.
+
+The audio model documented below does not use this mirror. It was trained on the
+real corpus retrieved from TalkBank under the DementiaBank data-use agreement,
+which is why it can report participant identity and speech timing and this one
+cannot.
 
 | | |
 |---|---|
@@ -159,6 +181,171 @@ python ml/train_language_model.py
 
 Deterministic given `SEED = 42`. Writes `ml/artifacts/language_model.joblib`,
 `metrics.json`, and out-of-fold predictions for honest plotting.
+
+---
+
+## Audio model (added later): the model that actually scores recordings
+
+The classifier above is trained on clinician-typed text and scores Whisper output
+in production. This one removes that mismatch by training on the real corpus,
+transcribed by the same code path that serves requests.
+
+- **Version:** 2.0.0 · `ml/artifacts/audio_model.joblib`
+- **Type:** Logistic regression on 27 linguistic features + TF-IDF 1–2 grams
+  **+ 9 speech-timing features**, sigmoid-calibrated
+- **Input:** a recorded picture description (audio, not text)
+- **Deployed for:** `POST /assessment/{id}/audio`. Typed transcripts still use the
+  text model, because they have no timing to give this one.
+
+### Training data
+
+**DementiaBank Pitt Cookie Theft, audio** — obtained from TalkBank directly under
+the DementiaBank data-use agreement, not from a mirror. Restricted; never
+committed or containerised.
+
+| | |
+|---|---|
+| Sessions with audio | 552 (Control 243, Dementia 309) |
+| After the 25-word floor | **519** |
+| Distinct participants | **285** |
+| Class split | 289 dementia / 230 control |
+| Transcription | faster-whisper `base.en`, identical settings to inference |
+
+**The effective sample size is 285 people, not 519 recordings.** Pitt is
+longitudinal (1.82 visits per participant), so cross-validation groups by
+participant and each fold tests on ~57 people.
+
+The positive class is **the DementiaBank dementia group, which includes MCI** — not
+"has dementia". Participant 172 appears in both groups because she converted
+during the study (Control at 72, MCI at 73/74/75); her bare-digit key is kept so
+her four visits stay in one fold.
+
+### The investigator confound, and why the audio is preprocessed
+
+Pitt sessions are interviews, and Whisper transcribes everyone present. The
+examiner's share of speech is **strongly correlated with the label**:
+
+| | Control | Dementia |
+|---|---|---|
+| INV share of speaking time | 4.1% | **12.0%** |
+| INV share of words | 8.8% | **16.4%** |
+
+The examiner talks about three times more with dementia participants, because they
+need more prompting. A model fitted on raw recordings can therefore score the
+condition by detecting **how much the examiner spoke** — a leak correlated with the
+label. It is also a train/serve mismatch in its own right: in the app the user
+records alone, so a speaker present in every training example is absent from every
+real one.
+
+`ml/par_audio.py` excises investigator speech using the CHAT millisecond time
+bullets before transcription. Spans where INV and PAR overlap are kept, since
+overlapping speech cannot be separated by cutting. Measured effect:
+
+| Arm | INV included | INV removed |
+|---|---|---|
+| **timing only** | 0.719 | **0.640** |
+| text only | 0.793 | 0.808 |
+
+**Timing-only lost 0.079 of AUC once the examiner was removed** — that much of the
+earlier figure was `pause_ratio` detecting a talkative interviewer rather than a
+hesitant patient. Removing it *helped* the text model, so the examiner's words were
+mostly diluting the participant's markers.
+
+### Evaluation
+
+`StratifiedGroupKFold(5) × 4 seeds` (20 folds), grouped by `participant_id`:
+
+| Configuration | ROC-AUC | 95% CI | Acc | Sens | Spec |
+|---|---|---|---|---|---|
+| text only (linguistic + tfidf) | 0.808 | 0.784–0.832 | 0.739 | 0.729 | 0.752 |
+| timing only | 0.640 | 0.621–0.658 | 0.601 | 0.517 | 0.705 |
+| **text + timing** *(deployed)* | **0.816** | 0.796–0.836 | 0.753 | 0.738 | 0.772 |
+| pause-marked text | 0.809 | 0.785–0.833 | 0.743 | 0.737 | 0.751 |
+| pause-marked text + timing | 0.817 | 0.797–0.837 | 0.752 | 0.736 | 0.773 |
+
+**Timing features are learned predictors here, not decoration.** Timing alone
+reaches 0.640 from nine pause and rate numbers — well above chance — and this is the
+first version in which they enter the risk calculation at all. Their *marginal*
+contribution over text is modest, though: 0.808 → 0.816, with overlapping intervals.
+
+#### Why the deployed model is not the highest scorer (again)
+
+`pause-marked text + timing` scored highest at 0.8170 against 0.8164 — a difference
+of **0.0006**, with 95% CIs overlapping almost entirely. Pause-marking is real
+inference machinery: the vectorizer must be fed `transcript_pauses` built by
+`speech.pause_encoded_transcript`, matching how it was fitted. Six ten-thousandths
+of AUC that the corpus cannot distinguish from zero does not justify that, so the
+trainer deploys the unmarked arm whenever the intervals overlap.
+
+Splicing `longpause` into the word sequence so the n-gram model could learn
+"hesitated before this word" was a reasonable hypothesis. This corpus does not
+support it, and that is reported rather than buried.
+
+#### Participant leakage, measured
+
+| | ROC-AUC |
+|---|---|
+| Ungrouped CV (same participant in train and test) | 0.833 |
+| **Grouped by participant** | **0.816** |
+| Inflation | **+0.017** |
+
+Smaller than expected at 1.82 visits per person, but it is the reason the grouped
+figure is the one quoted. The text model above cannot compute this, because its
+mirror carries no participant IDs — so **0.905 is not comparable to 0.816**: it is
+ungrouped, on clinician transcripts, with an unmeasurable amount of this same leak.
+
+#### Choosing an operating point
+
+The app never applies a cutoff — it passes the calibrated probability into
+`fusion.py` as a weighted component. For anyone wanting a binary decision, from
+out-of-fold predictions:
+
+| Threshold | Sens | Spec | Youden J |
+|---|---|---|---|
+| 0.35 | 0.841 | 0.643 | 0.484 |
+| 0.40 | 0.830 | 0.687 | 0.517 |
+| **0.45** | 0.796 | 0.739 | **0.535** |
+| 0.50 *(default)* | 0.734 | 0.761 | 0.509 |
+| 0.60 | 0.654 | 0.826 | 0.480 |
+
+0.5 is logistic regression's default, not a clinical choice. Youden J peaks at 0.45,
+and a screen that misses cases is worse than one that over-refers, so a lower
+threshold is defensible — but it should be stated, not assumed. Full sweep in
+`metrics_audio.json`.
+
+The sensitivity at 0.50 here (0.734) differs slightly from the evaluation table
+above (0.738) because the two aggregate differently: the table averages per-fold
+metrics across 20 folds, while the sweep pools the repeat-averaged out-of-fold
+probability vector and scores it once. Both are honest; neither is the in-sample
+refit.
+
+### Limitations specific to this model
+
+- **285 people.** Wide intervals, and arm-to-arm differences of a few thousandths
+  are not resolvable.
+- **Pitt audio is 1980s–90s clinic recordings**; users record on modern microphones
+  in lossy Opus. Timing features derive from word timestamps and transfer across
+  that gap reasonably. Spectral voice-quality features would not, which is why none
+  are used.
+- **No demographics are used or audited.** Age and sex are in the CHAT headers but
+  are not modelled, so this is not audited for age or sex bias.
+- **Sensitivity at the default threshold is 0.734** — it misses about a quarter of
+  the positive class. It is a screening indicator, not a diagnosis.
+
+### Reproducing
+
+```bash
+python ml/download_pitt.py     # needs approved DementiaBank credentials
+python ml/census_pitt.py       # audit before training
+python ml/par_audio.py         # remove investigator speech
+python ml/build_dataset.py --force
+python ml/train_audio_model.py
+```
+
+Deterministic given `SEED = 42`. Writes `audio_model.joblib`, `metrics_audio.json`,
+and `audio_oof_probabilities.npy` + `audio_labels.npy` for honest ROC and
+calibration plots. **Do not plot the in-sample refit** — the deployed model is
+fitted on all 519 samples, so scoring training data gives an optimistic number.
 
 ---
 

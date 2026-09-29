@@ -53,6 +53,9 @@ export default function TrailMakingB({ spec, onComplete }) {
   }
 
   const nextLabel = expected[done.length]
+  // The trail length varies by difficulty tier (8 to 12 nodes), so the endpoint
+  // named in the instructions has to come from the stimuli, not a constant.
+  const lastLabel = expected[expected.length - 1] ?? 'E'
 
   return (
     <div className="card test-card">
@@ -70,7 +73,7 @@ export default function TrailMakingB({ spec, onComplete }) {
             <p className="muted mb-3">
               Start at <strong>1</strong>, then <strong>A</strong>, then{' '}
               <strong>2</strong>, then <strong>B</strong> … up to{' '}
-              <strong>E</strong>. Both speed and accuracy are recorded.
+              <strong>{lastLabel}</strong>. Both speed and accuracy are recorded.
             </p>
             <button className="btn btn-primary btn-lg" onClick={begin}>
               Start
@@ -79,6 +82,12 @@ export default function TrailMakingB({ spec, onComplete }) {
         ) : (
           <>
             <div className="trail-canvas">
+              {/* Node coordinates are percentages of the canvas, and the nodes
+                  themselves are centred on those percentages by a translate(-50%,-50%).
+                  preserveAspectRatio="none" makes the 0-100 viewBox map one unit
+                  to one percent on each axis independently, so a line endpoint at
+                  (n.x, n.y) lands exactly on that node's centre whatever shape the
+                  canvas is. */}
               <svg className="trail-line" viewBox="0 0 100 100" preserveAspectRatio="none">
                 {done.slice(1).map((label, i) => {
                   const a = nodes.find((n) => n.label === done[i])
@@ -88,7 +97,10 @@ export default function TrailMakingB({ spec, onComplete }) {
                     <line
                       key={label}
                       x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                      stroke="var(--low)" strokeWidth="0.5" vectorEffect="non-scaling-stroke"
+                      stroke="var(--low)"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      vectorEffect="non-scaling-stroke"
                     />
                   )
                 })}
