@@ -11,8 +11,20 @@ Label modes:
     binary (default)  0 = Normal (CDR 0), 1 = Impaired (CDR >= 0.5)
     three             the raw 3-class problem, kept for the report's comparison
 
-Model:  ResNet-18 pretrained on ImageNet; by default only layer4 + head are
-        fine-tuned (126-subject training sets overfit a fully unfrozen net).
+Model:  selected with --arch (all evaluated under the SAME folds/seed/eval):
+    resnet18 (default)  ImageNet CNN; only layer4 + head fine-tuned
+                        (126-subject training sets overfit a fully unfrozen
+                        net). This is the deployed architecture.
+    vit_b16             google/vit-base-patch16-224-in21k (HF transformers);
+                        last 2 encoder blocks + head fine-tuned.
+    dinov2_s            facebook/dinov2-small (HF transformers); frozen
+                        backbone + linear head on the CLS token — the
+                        literature-backed small-data recipe. --finetune all
+                        additionally unfreezes the last 2 blocks.
+Transformer archs write arch-suffixed artifacts (mri_metrics_<arch>.json,
+mri_model_<arch>.pt) and never touch the deployed mri_model.pt / ONNX export.
+--save-preds dumps per-session probabilities per fold for offline ensembling
+(see ensemble_eval.py).
 
 Evaluation is BY SUBJECT and BY SESSION: every slice of a person lands in one
 split only, and a session's prediction is the mean of its slice probabilities
@@ -47,6 +59,17 @@ IMG_SIZE = 224
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 
+# Per-arch config: HF checkpoint (None = torchvision resnet18), the input
+# normalisation the checkpoint was pretrained with, and a sensible default lr
+# (head-only training wants a larger step than partial fine-tuning).
+ARCHS = {
+    "resnet18": {"hf": None, "norm": (IMAGENET_MEAN, IMAGENET_STD), "lr": 3e-4},
+    "vit_b16": {"hf": "google/vit-base-patch16-224-in21k",
+                "norm": ([0.5] * 3, [0.5] * 3), "lr": 1e-4},
+    "dinov2_s": {"hf": "facebook/dinov2-small",
+                 "norm": (IMAGENET_MEAN, IMAGENET_STD), "lr": 1e-3},
+}
+
 CLASS_NAMES = {
     "three": ["CDR 0 (normal)", "CDR 0.5 (very mild)", "CDR >=1 (dementia)"],
     "binary": ["No impairment signs (CDR 0)", "Signs of impairment (CDR >= 0.5)"],
@@ -70,14 +93,15 @@ def pick_device(name: str) -> torch.device:
 
 
 class SliceDataset(Dataset):
-    def __init__(self, frame: pd.DataFrame, root: Path, train: bool) -> None:
+    def __init__(self, frame: pd.DataFrame, root: Path, train: bool,
+                 norm: tuple = (IMAGENET_MEAN, IMAGENET_STD)) -> None:
         self.frame = frame.reset_index(drop=True)
         self.root = root
         base = [
             transforms.Resize((IMG_SIZE, IMG_SIZE)),
             transforms.Grayscale(num_output_channels=3),
             transforms.ToTensor(),
-            transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+            transforms.Normalize(*norm),
         ]
         aug = [
             transforms.RandomHorizontalFlip(),
@@ -124,13 +148,50 @@ def subject_folds(df: pd.DataFrame, k: int, seed: int = SEED) -> list[set]:
     return [set(f) for f in folds]
 
 
-def make_model(n_classes: int, finetune: str) -> nn.Module:
-    model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
-    model.fc = nn.Linear(model.fc.in_features, n_classes)
-    if finetune == "layer4":
-        for name, p in model.named_parameters():
-            if not (name.startswith("layer4") or name.startswith("fc")):
-                p.requires_grad = False
+class HFClassifier(nn.Module):
+    """A Hugging Face vision backbone + linear head on the CLS token."""
+
+    def __init__(self, hf_name: str, n_classes: int) -> None:
+        super().__init__()
+        from transformers import AutoModel
+
+        self.backbone = AutoModel.from_pretrained(hf_name)
+        self.head = nn.Linear(self.backbone.config.hidden_size, n_classes)
+
+    def forward(self, x):
+        out = self.backbone(pixel_values=x)
+        cls = out.last_hidden_state[:, 0]
+        return self.head(cls)
+
+
+def make_model(arch: str, n_classes: int, finetune: str) -> nn.Module:
+    if arch == "resnet18":
+        model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+        model.fc = nn.Linear(model.fc.in_features, n_classes)
+        if finetune == "layer4":
+            for name, p in model.named_parameters():
+                if not (name.startswith("layer4") or name.startswith("fc")):
+                    p.requires_grad = False
+        return model
+
+    model = HFClassifier(ARCHS[arch]["hf"], n_classes)
+    for p in model.backbone.parameters():
+        p.requires_grad = False
+    # Partial-unfreeze recipe mirroring the resnet layer4-only default:
+    # vit_b16 always fine-tunes its last 2 encoder blocks + final norm;
+    # dinov2_s stays fully frozen (linear probe) unless --finetune all.
+    if arch == "vit_b16" or finetune == "all":
+        # transformers v5: ViTModel keeps blocks at .layers, Dinov2Model at
+        # .encoder.layer (older versions used .encoder.layer for both).
+        enc = getattr(model.backbone, "encoder", None)
+        blocks = (getattr(enc, "layer", None) or getattr(enc, "layers", None)
+                  if enc is not None else model.backbone.layers)
+        for blk in blocks[-2:]:
+            for p in blk.parameters():
+                p.requires_grad = True
+        if hasattr(model.backbone, "layernorm"):
+            for p in model.backbone.layernorm.parameters():
+                p.requires_grad = True
     return model
 
 
@@ -149,8 +210,9 @@ def session_eval(model, loader, frame, device, n_classes: int):
     for i, row in frame.reset_index(drop=True).iterrows():
         by_session[row["session"]].append(i)
 
-    y_true, y_prob = [], []
-    for _, rows in sorted(by_session.items()):
+    y_true, y_prob, sessions = [], [], []
+    for session, rows in sorted(by_session.items()):
+        sessions.append(session)
         y_true.append(int(frame.iloc[rows[0]]["label"]))
         y_prob.append(probs[rows].mean(axis=0))
     y_true = np.array(y_true)
@@ -176,17 +238,22 @@ def session_eval(model, loader, frame, device, n_classes: int):
         "auc": float(auc),
         "per_class_recall": per_class_recall,
         "confusion_matrix": cm.tolist(),
+        "sessions_detail": [
+            {"session": s, "label": int(t), "probs": p.tolist()}
+            for s, t, p in zip(sessions, y_true, y_prob)
+        ],
     }
 
 
 def train_one(train_frame, val_frame, data_dir, device, args, n_classes, tag=""):
     """Train a model on train_frame, early-stopping on val_frame session AUC."""
     loaders = {}
+    norm = ARCHS[args.arch]["norm"]
     for name, frame, is_train in (("train", train_frame, True), ("val", val_frame, False)):
-        ds = SliceDataset(frame, data_dir, train=is_train)
+        ds = SliceDataset(frame, data_dir, train=is_train, norm=norm)
         loaders[name] = DataLoader(ds, batch_size=args.batch_size, shuffle=is_train, num_workers=2)
 
-    model = make_model(n_classes, args.finetune).to(device)
+    model = make_model(args.arch, n_classes, args.finetune).to(device)
 
     counts = train_frame.groupby("label").size().reindex(range(n_classes), fill_value=1)
     weights = torch.tensor((counts.sum() / (n_classes * counts)).values, dtype=torch.float32).to(device)
@@ -230,14 +297,22 @@ def main() -> None:
     ap.add_argument("--data-dir", required=True, help="dir containing manifest(_v2).csv and slices/")
     ap.add_argument("--out-dir", default=str(Path(__file__).resolve().parents[1] / "artifacts"))
     ap.add_argument("--label-mode", choices=["binary", "three"], default="binary")
+    ap.add_argument("--arch", choices=list(ARCHS), default="resnet18",
+                    help="resnet18 = deployed CNN; vit_b16 / dinov2_s = HF transformers")
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--batch-size", type=int, default=32)
-    ap.add_argument("--lr", type=float, default=3e-4)
+    ap.add_argument("--lr", type=float, default=None,
+                    help="default: per-arch (resnet18 3e-4, vit_b16 1e-4, dinov2_s 1e-3)")
     ap.add_argument("--patience", type=int, default=6)
     ap.add_argument("--device", default="auto")
-    ap.add_argument("--finetune", choices=["all", "layer4"], default="layer4")
+    ap.add_argument("--finetune", choices=["all", "layer4"], default="layer4",
+                    help="layer4 = the partial/frozen recipe per arch; all = unfreeze more")
+    ap.add_argument("--save-preds", action="store_true",
+                    help="write per-session fold probabilities to preds_<arch>.csv (for ensemble_eval.py)")
     args = ap.parse_args()
+    if args.lr is None:
+        args.lr = ARCHS[args.arch]["lr"]
 
     set_seed()
     device = pick_device(args.device)
@@ -279,18 +354,43 @@ def main() -> None:
         "macro_f1": agg("macro_f1"),
         "auc": agg("auc"),
         "per_fold": [
-            {k: (round(v, 4) if isinstance(v, float) else v) for k, v in f.items() if k != "confusion_matrix"}
+            {k: (round(v, 4) if isinstance(v, float) else v) for k, v in f.items()
+             if k not in ("confusion_matrix", "sessions_detail")}
             for f in fold_results
         ],
     }
     print("\nCV summary:", json.dumps({k: cv[k] for k in ("accuracy", "f1", "auc")}, indent=2))
 
     # ---- artifacts -------------------------------------------------------
-    torch.save({"state_dict": deployed_state, "img_size": IMG_SIZE, "classes": classes},
-               out_dir / "mri_model.pt")
+    # Transformer archs write arch-suffixed files and never touch the
+    # deployed mri_model.pt / mri_metrics.json / ONNX export.
+    is_deployed_arch = args.arch == "resnet18"
+    suffix = "" if is_deployed_arch else f"_{args.arch}"
+
+    if args.save_preds:
+        rows = []
+        for fold_i, f in enumerate(fold_results):
+            for d in f["sessions_detail"]:
+                row = {"fold": fold_i, "session": d["session"], "label": d["label"]}
+                row.update({f"p_{c}": round(p, 6) for c, p in enumerate(d["probs"])})
+                rows.append(row)
+        preds_path = out_dir / f"preds_{args.arch}.csv"
+        pd.DataFrame(rows).to_csv(preds_path, index=False)
+        print(f"saved per-session predictions: {preds_path}")
+
+    torch.save({"state_dict": deployed_state, "img_size": IMG_SIZE, "classes": classes,
+                "arch": args.arch},
+               out_dir / f"mri_model{suffix}.pt")
+
+    model_desc = {
+        "resnet18": f"ResNet-18 (ImageNet transfer learning), {n_classes}-class head, finetune={args.finetune}",
+        "vit_b16": f"ViT-B/16 (google/vit-base-patch16-224-in21k, HF transformers), last 2 blocks + head fine-tuned, {n_classes}-class head",
+        "dinov2_s": f"DINOv2-small (facebook/dinov2-small, HF transformers), "
+                    f"{'last 2 blocks + head fine-tuned' if args.finetune == 'all' else 'frozen backbone + linear head'}, {n_classes}-class head",
+    }[args.arch]
 
     metrics = {
-        "model": f"ResNet-18 (ImageNet transfer learning), {n_classes}-class head, finetune={args.finetune}",
+        "model": model_desc,
         "task": f"{args.label_mode} classification of T1w axial MRI slices, aggregated per session",
         "label_mode": args.label_mode,
         "classes": classes,
@@ -307,7 +407,8 @@ def main() -> None:
         "cv": cv,
         "deployed": {
             "which": "fold-0 model (trained on the other folds, early-stopped on fold 0)",
-            "fold0_validation": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in deployed_val.items()},
+            "fold0_validation": {k: (round(v, 4) if isinstance(v, float) else v)
+                                 for k, v in deployed_val.items() if k != "sessions_detail"},
         },
         "training": {"optimizer": f"Adam lr={args.lr} wd=1e-4", "class_weighted_loss": True,
                      "augmentation": "hflip, rot8, translate5%, jitter", "seed": SEED},
@@ -320,12 +421,16 @@ def main() -> None:
         ],
         "version": "2.0.0",
     }
-    (out_dir / "mri_metrics.json").write_text(json.dumps(metrics, indent=2))
+    (out_dir / f"mri_metrics{suffix}.json").write_text(json.dumps(metrics, indent=2))
 
-    from export_onnx import export as export_onnx
+    if is_deployed_arch:
+        from export_onnx import export as export_onnx
 
-    export_onnx(out_dir)
-    print(f"saved: {out_dir}/mri_model.pt, mri_model.onnx, mri_metrics.json")
+        export_onnx(out_dir)
+        print(f"saved: {out_dir}/mri_model.pt, mri_model.onnx, mri_metrics.json")
+    else:
+        print(f"saved: {out_dir}/mri_model{suffix}.pt, mri_metrics{suffix}.json "
+              f"(deployed ResNet artifacts untouched; no ONNX export for {args.arch})")
 
 
 if __name__ == "__main__":
