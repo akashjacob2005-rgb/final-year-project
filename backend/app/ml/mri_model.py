@@ -22,10 +22,25 @@ from . import paths
 
 MRI_MODEL_PATH = paths.ARTIFACTS_DIR / "mri_model.onnx"
 MRI_METRICS_PATH = paths.ARTIFACTS_DIR / "mri_metrics.json"
+MRI_ENSEMBLE_METRICS_PATH = paths.ARTIFACTS_DIR / "mri_ensemble_metrics.json"
 
 IMG_SIZE = 224
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+_HALF_MEAN = np.array([0.5, 0.5, 0.5], dtype=np.float32)
+_HALF_STD = np.array([0.5, 0.5, 0.5], dtype=np.float32)
+
+# Ensemble member registry. The ResNet is mandatory (it also carries the CAM
+# output the heatmaps come from); transformer members load only when their
+# ONNX exists next to it — FAIL-SOFT, so a deployment that only ships the
+# ResNet artifact (e.g. the memory-constrained free tier) behaves exactly as
+# before. Normalisation must match each member's pretraining (see ARCHS in
+# ml/mri/train_mri.py).
+_MEMBERS = [
+    ("resnet18", "mri_model.onnx", IMAGENET_MEAN, IMAGENET_STD),
+    ("dinov2_s", "mri_model_dinov2_s.onnx", IMAGENET_MEAN, IMAGENET_STD),
+    ("vit_b16", "mri_model_vit_b16.onnx", _HALF_MEAN, _HALF_STD),
+]
 
 _FALLBACK_CLASSES = [
     "No impairment signs (CDR 0)",
@@ -33,7 +48,7 @@ _FALLBACK_CLASSES = [
 ]
 
 _lock = threading.Lock()
-_session = None
+_sessions: dict[str, object] = {}
 
 
 def class_names() -> list[str]:
@@ -95,21 +110,40 @@ def enabled() -> bool:
     return MRI_MODEL_PATH.exists()
 
 
-def _get_session():
-    global _session
+def member_files_present() -> list[str]:
+    """Arch names whose ONNX artifact exists — cheap, no model load."""
+    return [arch for arch, fname, _, _ in _MEMBERS
+            if (paths.ARTIFACTS_DIR / fname).exists()]
+
+
+def _get_sessions() -> list[tuple[str, object, np.ndarray, np.ndarray]]:
+    """Loaded ensemble members as (arch, session, mean, std).
+
+    The ResNet must load or the pathway is unavailable; a transformer member
+    that is missing or corrupt is skipped with the rest of the ensemble intact.
+    """
     with _lock:
-        if _session is None:
+        if not _sessions:
             import onnxruntime as ort
 
-            try:
-                _session = ort.InferenceSession(
-                    str(MRI_MODEL_PATH), providers=["CPUExecutionProvider"]
-                )
-            except Exception as exc:  # missing .onnx.data sidecar, corrupt file
-                raise MriUnavailable(
-                    f"MRI model artifact failed to load: {exc}"
-                ) from exc
-    return _session
+            for arch, fname, _, _ in _MEMBERS:
+                path = paths.ARTIFACTS_DIR / fname
+                if not path.exists():
+                    if arch == "resnet18":
+                        raise MriUnavailable("MRI model artifact is missing")
+                    continue
+                try:
+                    _sessions[arch] = ort.InferenceSession(
+                        str(path), providers=["CPUExecutionProvider"]
+                    )
+                except Exception as exc:  # missing .onnx.data sidecar, corrupt file
+                    if arch == "resnet18":
+                        raise MriUnavailable(
+                            f"MRI model artifact failed to load: {exc}"
+                        ) from exc
+                    # fail-soft: serve without this optional member
+    return [(arch, _sessions[arch], mean, std)
+            for arch, _, mean, std in _MEMBERS if arch in _sessions]
 
 
 # Inferno-like colormap anchors (r, g, b) — avoids a matplotlib dependency.
@@ -162,8 +196,8 @@ def _overlay(gray: np.ndarray, heat01: np.ndarray) -> np.ndarray:
     return np.clip(base * (1 - alpha) + color * alpha, 0, 255).astype(np.uint8)
 
 
-def _to_model_input(slices: list[np.ndarray]) -> np.ndarray:
-    """uint8 slices -> normalised NCHW batch, mirroring the training transforms."""
+def _to_raw_batch(slices: list[np.ndarray]) -> np.ndarray:
+    """uint8 slices -> un-normalised [0,1] NCHW batch (resize + grey->RGB)."""
     from PIL import Image
 
     batch = []
@@ -172,10 +206,16 @@ def _to_model_input(slices: list[np.ndarray]) -> np.ndarray:
             (IMG_SIZE, IMG_SIZE), Image.Resampling.BILINEAR
         )
         x = np.asarray(img, dtype=np.float32) / 255.0          # HW
-        x = np.repeat(x[None, ...], 3, axis=0)                 # CHW, grey->RGB
-        x = (x - IMAGENET_MEAN[:, None, None]) / IMAGENET_STD[:, None, None]
-        batch.append(x)
-    return np.stack(batch).astype(np.float32)
+        batch.append(np.repeat(x[None, ...], 3, axis=0))       # CHW, grey->RGB
+    return np.stack(batch)
+
+
+def _to_model_input(slices: list[np.ndarray],
+                    mean: np.ndarray = IMAGENET_MEAN,
+                    std: np.ndarray = IMAGENET_STD) -> np.ndarray:
+    """uint8 slices -> normalised NCHW batch, mirroring the training transforms."""
+    raw = _to_raw_batch(slices)
+    return ((raw - mean[None, :, None, None]) / std[None, :, None, None]).astype(np.float32)
 
 
 def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
@@ -201,19 +241,27 @@ def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
     except ValueError as exc:
         raise MriError(str(exc)) from exc
 
-    x = _to_model_input(slices)
-    run = _get_session().run
-    out_a = run(None, {"input": x})
-    out_b = run(None, {"input": x[:, :, :, ::-1].copy()})
-
     def _softmax(logits: np.ndarray) -> np.ndarray:
         e = np.exp(logits - logits.max(axis=1, keepdims=True))
         return e / e.sum(axis=1, keepdims=True)
 
-    # Average PROBABILITIES across the TTA pair — the same aggregation
-    # session_eval used during validation. Summing logits first would sharpen
-    # every distribution and show confidences the metrics never measured.
-    slice_probs = (_softmax(out_a[0]) + _softmax(out_b[0])) / 2
+    # Average PROBABILITIES across the TTA pair and across ensemble members —
+    # the same aggregation session_eval / ensemble_eval used during validation.
+    # Summing logits first would sharpen every distribution and show
+    # confidences the metrics never measured.
+    raw = _to_raw_batch(slices)
+    members = _get_sessions()
+    slice_probs = None
+    resnet_out = None  # the (a, b) TTA outputs of the CAM-carrying member
+    for arch, sess, mean, std in members:
+        x = ((raw - mean[None, :, None, None]) / std[None, :, None, None]).astype(np.float32)
+        out_a = sess.run(None, {"input": x})
+        out_b = sess.run(None, {"input": x[:, :, :, ::-1].copy()})
+        member_probs = (_softmax(out_a[0]) + _softmax(out_b[0])) / 2
+        slice_probs = member_probs if slice_probs is None else slice_probs + member_probs
+        if arch == "resnet18":
+            resnet_out = (out_a, out_b)
+    slice_probs = slice_probs / len(members)
     probs = slice_probs.mean(axis=0)  # mean over slices
 
     names = class_names()
@@ -226,8 +274,11 @@ def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
 
     # CAM output exists on artifacts exported by ml/mri/export_onnx.py; older
     # logits-only artifacts still work, just without the visual explanation.
+    # In ensemble mode the heatmap comes from the ResNet member — exact CAM
+    # only exists for the GAP+linear CNN head, not for the transformers.
     slice_views = []
-    if len(out_a) > 1:
+    if resnet_out is not None and len(resnet_out[0]) > 1:
+        out_a, out_b = resnet_out
         cam = (out_a[1] + out_b[1][:, :, :, ::-1]) / 2  # un-flip the TTA pass
         heat = np.maximum(cam[:, top], 0.0)  # ReLU, predicted class only
         peak = heat.max()
@@ -243,6 +294,18 @@ def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
                 }
             )
 
+    member_names = [arch for arch, _, _, _ in members]
+    explanation = (
+        "Heatmaps show the regions that most influenced the model's decision "
+        "(class activation mapping). They indicate model attention, not a "
+        "clinical annotation of pathology."
+    )
+    if len(member_names) > 1:
+        explanation += (
+            " The heatmap comes from the CNN member of the ensemble; the "
+            "verdict averages all members."
+        )
+
     return {
         "available": True,
         "probabilities": {names[i]: round(float(p), 4) for i, p in enumerate(probs)},
@@ -251,12 +314,9 @@ def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
         "confidence": round(float(probs[top]), 4),
         "slices_analysed": len(slices),
         "volume_shape": list(volume.shape),
+        "model_members": member_names,
         "slices": slice_views,
-        "explanation_note": (
-            "Heatmaps show the regions that most influenced the model's decision "
-            "(class activation mapping). They indicate model attention, not a "
-            "clinical annotation of pathology."
-        ),
+        "explanation_note": explanation,
         "note": (
             "Research prototype trained on OASIS-3. Reported separately from the "
             "behavioural risk score; not a diagnosis."
@@ -269,3 +329,11 @@ def model_metrics() -> dict | None:
     if not MRI_METRICS_PATH.exists():
         return None
     return json.loads(MRI_METRICS_PATH.read_text())
+
+
+@lru_cache(maxsize=1)
+def ensemble_metrics() -> dict | None:
+    """CV metrics of the deployed ensemble (docs/ARCH_COMPARISON.md study)."""
+    if not MRI_ENSEMBLE_METRICS_PATH.exists():
+        return None
+    return json.loads(MRI_ENSEMBLE_METRICS_PATH.read_text())

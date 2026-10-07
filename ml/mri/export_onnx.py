@@ -10,6 +10,11 @@ render "where the model looked" heatmaps under plain onnxruntime.
 
 Standalone re-export (after training already produced mri_model.pt):
     python ml/mri/export_onnx.py [--artifacts ml/artifacts]
+
+Transformer ensemble members (mri_model_<arch>.pt from train_mri.py --arch):
+    python ml/mri/export_onnx.py --arch dinov2_s [--artifacts ml/artifacts]
+Transformers export logits only (no exact CAM exists for them); the backend
+serves heatmaps from the ResNet member.
 """
 
 from __future__ import annotations
@@ -64,7 +69,39 @@ def export(artifacts_dir: Path) -> Path:
     return out
 
 
+def export_transformer(arch: str, artifacts_dir: Path) -> Path:
+    """Export a HF transformer member (dinov2_s / vit_b16) to logits-only ONNX."""
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from train_mri import ARCHS, HFClassifier  # noqa: PLC0415
+
+    ckpt = torch.load(artifacts_dir / f"mri_model_{arch}.pt",
+                      map_location="cpu", weights_only=False)
+    model = HFClassifier(ARCHS[arch]["hf"], len(ckpt["classes"]))
+    model.load_state_dict(ckpt["state_dict"])
+    model.eval()
+
+    out = artifacts_dir / f"mri_model_{arch}.onnx"
+    torch.onnx.export(
+        model,
+        torch.randn(1, 3, ckpt["img_size"], ckpt["img_size"]),
+        str(out),
+        input_names=["input"],
+        output_names=["logits"],
+        dynamic_axes={"input": {0: "batch"}, "logits": {0: "batch"}},
+        opset_version=17,
+    )
+    print(f"exported {out} (output: logits)")
+    return out
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--artifacts", default=str(Path(__file__).resolve().parents[1] / "artifacts"))
-    export(Path(ap.parse_args().artifacts))
+    ap.add_argument("--arch", choices=["resnet18", "dinov2_s", "vit_b16"], default="resnet18")
+    args = ap.parse_args()
+    if args.arch == "resnet18":
+        export(Path(args.artifacts))
+    else:
+        export_transformer(args.arch, Path(args.artifacts))

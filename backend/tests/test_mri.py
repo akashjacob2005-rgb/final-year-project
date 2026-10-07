@@ -348,3 +348,68 @@ def test_fake_zip_suffix_is_422(auth_client):
         files={"file": ("scan.zip", b"definitely not a zip", "application/zip")},
     )
     assert r.status_code == 422
+
+
+# --------------------------------------------------------------------------
+# ensemble serving (CNN + transformer members, probability averaging)
+# --------------------------------------------------------------------------
+
+
+def test_member_files_present_lists_existing_onnx():
+    members = mri_model.member_files_present()
+    assert set(members) <= {"resnet18", "dinov2_s", "vit_b16"}
+    if ARTIFACT:
+        assert "resnet18" in members
+
+
+class _FakeSession:
+    """Session stub emitting logits whose softmax is (1-p, p) for every slice."""
+
+    def __init__(self, p_impaired: float) -> None:
+        self._logit = float(np.log(p_impaired / (1 - p_impaired)))
+
+    def run(self, _outputs, feeds):
+        n = feeds["input"].shape[0]
+        logits = np.tile(np.array([[0.0, self._logit]], dtype=np.float32), (n, 1))
+        return [logits]
+
+
+@needs_artifact
+def test_ensemble_averages_member_probabilities(monkeypatch):
+    # Two disagreeing fake members must average to 0.5 impaired probability —
+    # the exact math ml/mri/ensemble_eval.py validated.
+    monkeypatch.setattr(
+        mri_model,
+        "_sessions",
+        {"resnet18": _FakeSession(0.9), "dinov2_s": _FakeSession(0.1)},
+    )
+    result = mri_model.predict(synthetic_nifti_bytes())
+    assert result["model_members"] == ["resnet18", "dinov2_s"]
+    impaired = result["probabilities"][mri_model.class_names()[1]]
+    assert abs(impaired - 0.5) < 1e-3
+    # fake sessions emit logits only -> no CAM views, and that must be fine
+    assert result["slices"] == []
+
+
+@needs_artifact
+def test_ensemble_fail_soft_single_member(monkeypatch):
+    # Only the ResNet loaded (e.g. transformer ONNX absent on the free tier):
+    # prediction still works and reports a single member.
+    monkeypatch.setattr(mri_model, "_sessions", {"resnet18": _FakeSession(0.7)})
+    result = mri_model.predict(synthetic_nifti_bytes())
+    assert result["model_members"] == ["resnet18"]
+    impaired = result["probabilities"][mri_model.class_names()[1]]
+    assert abs(impaired - 0.7) < 1e-3
+
+
+@needs_artifact
+def test_info_reflects_member_files(client):
+    r = client.get("/api/mri/info")
+    body = r.json()
+    if not body["available"]:
+        return
+    members = body["members"]
+    assert set(members) <= {"resnet18", "dinov2_s", "vit_b16"}
+    if len(members) > 1 and mri_model.ensemble_metrics():
+        assert body["model"].startswith("Ensemble")
+        assert body["cv"]["accuracy"]["mean"] > 0

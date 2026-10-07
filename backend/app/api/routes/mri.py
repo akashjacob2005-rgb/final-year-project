@@ -24,16 +24,35 @@ def mri_info():
     metrics = mri_model.model_metrics()
     if not metrics or not mri_model.enabled():
         return {"available": False, "message": "MRI model not available on this deployment"}
+
+    # Ensemble mode: active when the transformer ONNX files sit next to the
+    # ResNet artifact (file check only — /info must not force a model load).
+    members = mri_model.member_files_present()
+    ens = mri_model.ensemble_metrics() if len(members) > 1 else None
+    model_desc = metrics.get("model")
+    cv = metrics.get("cv")
+    if ens:
+        model_desc = (
+            "Ensemble (probability averaging): ResNet-18 CNN + DINOv2-small "
+            "+ ViT-B/16 transformers — see docs/ARCH_COMPARISON.md"
+        ) if len(members) == 3 else (
+            f"Ensemble (probability averaging): {', '.join(members)}"
+        )
+        cv = {k: ens[k] for k in ("accuracy", "f1", "macro_f1", "auc") if k in ens}
+        cv["folds"] = ens.get("folds")
+
     return {
         "available": True,
-        "model": metrics.get("model"),
+        "model": model_desc,
+        "members": members,
         "task": metrics.get("task"),
         "label_mode": metrics.get("label_mode"),
         "classes": metrics.get("classes"),
         "dataset": metrics.get("dataset"),
         "aggregation": metrics.get("aggregation"),
         "samples_available": mri_model.samples_available(),
-        "cv": metrics.get("cv"),
+        "cv": cv,
+        "member_cv": {"resnet18": metrics.get("cv")} if ens else None,
         # kept for older artifacts trained before cross-validation existed
         "test": metrics.get("test"),
         "validation": metrics.get("validation"),
