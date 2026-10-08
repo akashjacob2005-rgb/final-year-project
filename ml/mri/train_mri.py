@@ -50,7 +50,8 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from PIL import Image
-from sklearn.metrics import confusion_matrix, f1_score, roc_auc_score
+from sklearn.metrics import (balanced_accuracy_score, confusion_matrix,
+                             f1_score, roc_auc_score)
 from torch.utils.data import DataLoader, Dataset
 from torchvision import models, transforms
 
@@ -196,8 +197,8 @@ def make_model(arch: str, n_classes: int, finetune: str) -> nn.Module:
 
 
 @torch.no_grad()
-def session_eval(model, loader, frame, device, n_classes: int):
-    """Session-level metrics with horizontal-flip test-time augmentation."""
+def _session_probs(model, loader, frame, device, n_classes: int):
+    """Per-session TTA-averaged probabilities: (sessions, y_true, y_prob)."""
     model.eval()
     probs = np.zeros((len(frame), n_classes), dtype=np.float64)
     for x, _, idx in loader:
@@ -215,9 +216,21 @@ def session_eval(model, loader, frame, device, n_classes: int):
         sessions.append(session)
         y_true.append(int(frame.iloc[rows[0]]["label"]))
         y_prob.append(probs[rows].mean(axis=0))
-    y_true = np.array(y_true)
-    y_prob = np.vstack(y_prob)
-    y_pred = y_prob.argmax(axis=1)
+    return sessions, np.array(y_true), np.vstack(y_prob)
+
+
+def session_eval(model, loader, frame, device, n_classes: int,
+                 threshold: float | None = None):
+    """Session-level metrics with horizontal-flip test-time augmentation.
+
+    `threshold` (binary only): decision cutoff on p(impaired) chosen on an
+    inner validation split — EVAL-1's honest alternative to argmax at 0.5.
+    """
+    sessions, y_true, y_prob = _session_probs(model, loader, frame, device, n_classes)
+    if threshold is not None and n_classes == 2:
+        y_pred = (y_prob[:, 1] >= threshold).astype(int)
+    else:
+        y_pred = y_prob.argmax(axis=1)
 
     labels = list(range(n_classes))
     cm = confusion_matrix(y_true, y_pred, labels=labels)
@@ -233,6 +246,7 @@ def session_eval(model, loader, frame, device, n_classes: int):
     return {
         "sessions": int(len(y_true)),
         "accuracy": float((y_pred == y_true).mean()),
+        "balanced_accuracy": float(balanced_accuracy_score(y_true, y_pred)),
         "macro_f1": float(f1_score(y_true, y_pred, average="macro")),
         "f1": float(f1_score(y_true, y_pred, average=avg)),
         "auc": float(auc),
@@ -245,11 +259,45 @@ def session_eval(model, loader, frame, device, n_classes: int):
     }
 
 
+def _inner_split(train_frame, frac: float):
+    """Carve a subject-stratified inner-validation split out of a training set."""
+    subj_label = train_frame.groupby("subject_id")["label"].max()
+    rng = random.Random(SEED)  # fixed: identical inner splits across variants
+    inner: list = []
+    for label in sorted(subj_label.unique()):
+        subjects = sorted(subj_label[subj_label == label].index)
+        rng.shuffle(subjects)
+        inner += subjects[: max(1, round(len(subjects) * frac))]
+    inner_set = set(inner)
+    return (train_frame[~train_frame.subject_id.isin(inner_set)],
+            train_frame[train_frame.subject_id.isin(inner_set)])
+
+
+def _tune_threshold(y_true: np.ndarray, p1: np.ndarray) -> float:
+    """Balanced-accuracy-maximising cutoff, chosen on inner-validation only."""
+    grid = np.linspace(0.2, 0.8, 61)
+    scores = [balanced_accuracy_score(y_true, (p1 >= t).astype(int)) for t in grid]
+    return float(grid[int(np.argmax(scores))])
+
+
 def train_one(train_frame, val_frame, data_dir, device, args, n_classes, tag=""):
-    """Train a model on train_frame, early-stopping on val_frame session AUC."""
+    """Train a model on train_frame.
+
+    Default (inner_val=0): early-stop on val_frame session AUC — the original
+    behaviour, where the scored fold also selects the best epoch (optimistic).
+    EVAL-1 (--inner-val > 0): an inner subject-stratified split carved from
+    the TRAINING subjects drives early stopping and threshold selection; the
+    outer val_frame is scored exactly once, with the chosen threshold.
+    """
+    inner_frac = getattr(args, "inner_val", 0.0) or 0.0
+    inner_frame = None
+    if inner_frac > 0:
+        train_frame, inner_frame = _inner_split(train_frame, inner_frac)
+
     loaders = {}
     norm = ARCHS[args.arch]["norm"]
-    for name, frame, is_train in (("train", train_frame, True), ("val", val_frame, False)):
+    stop_frame = inner_frame if inner_frame is not None else val_frame
+    for name, frame, is_train in (("train", train_frame, True), ("val", stop_frame, False)):
         ds = SliceDataset(frame, data_dir, train=is_train, norm=norm)
         loaders[name] = DataLoader(ds, batch_size=args.batch_size, shuffle=is_train, num_workers=2)
 
@@ -274,7 +322,7 @@ def train_one(train_frame, val_frame, data_dir, device, args, n_classes, tag="")
             running += loss.item() * len(y)
         train_loss = running / len(train_frame)
 
-        val = session_eval(model, loaders["val"], val_frame, device, n_classes)
+        val = session_eval(model, loaders["val"], stop_frame, device, n_classes)
         score = val["auc"] if not np.isnan(val["auc"]) else val["macro_f1"]
         history.append({"epoch": epoch, "train_loss": round(train_loss, 4),
                         "val_accuracy": round(val["accuracy"], 4), "val_auc": round(val["auc"], 4)})
@@ -288,6 +336,22 @@ def train_one(train_frame, val_frame, data_dir, device, args, n_classes, tag="")
             if bad >= args.patience:
                 print(f"{tag}early stop at epoch {epoch}")
                 break
+
+    if inner_frame is not None:
+        # EVAL-1: epoch and threshold were chosen on the inner split; the
+        # OUTER fold is scored exactly once, here, with the restored model.
+        model.load_state_dict(best_state)
+        _, y_in, p_in = _session_probs(model, loaders["val"], inner_frame, device, n_classes)
+        thr = _tune_threshold(y_in, p_in[:, 1]) if n_classes == 2 else None
+        outer_ds = SliceDataset(val_frame, data_dir, train=False, norm=norm)
+        outer_loader = DataLoader(outer_ds, batch_size=args.batch_size,
+                                  shuffle=False, num_workers=2)
+        best_val = session_eval(model, outer_loader, val_frame, device,
+                                n_classes, threshold=thr)
+        best_val["threshold"] = thr
+        print(f"{tag}OUTER fold: acc {best_val['accuracy']:.3f}  "
+              f"bal-acc {best_val['balanced_accuracy']:.3f}  "
+              f"auc {best_val['auc']:.3f}  (thr {thr})")
 
     return best_state, best_val, history
 
@@ -310,9 +374,19 @@ def main() -> None:
                     help="layer4 = the partial/frozen recipe per arch; all = unfreeze more")
     ap.add_argument("--save-preds", action="store_true",
                     help="write per-session fold probabilities to preds_<arch>.csv (for ensemble_eval.py)")
+    ap.add_argument("--seeds", default="42",
+                    help="comma-separated fold-assignment seeds; >1 = repeated CV (EVAL-1)")
+    ap.add_argument("--inner-val", type=float, default=0.0,
+                    help="fraction of TRAINING subjects for an inner early-stop/threshold "
+                         "split; outer folds are then scored exactly once (EVAL-1)")
+    ap.add_argument("--experiment", default=None,
+                    help="experiment name: outputs go to ml/experiments/<name>/ and the "
+                         "deployed artifacts (mri_model.pt/.onnx) are NOT touched")
     args = ap.parse_args()
     if args.lr is None:
         args.lr = ARCHS[args.arch]["lr"]
+    if args.experiment:
+        args.out_dir = str(Path(__file__).resolve().parents[1] / "experiments" / args.experiment)
 
     set_seed()
     device = pick_device(args.device)
@@ -329,19 +403,23 @@ def main() -> None:
     print(f"{df.subject_id.nunique()} subjects, {df.session.nunique()} sessions, {len(df)} slices")
     print("session class counts:", sess_labels.value_counts().sort_index().to_dict())
 
-    folds = subject_folds(df, args.folds)
+    seeds = [int(s) for s in str(args.seeds).split(",")]
     fold_results, deployed_state, deployed_val = [], None, None
-    for i, fold_subjects in enumerate(folds):
-        val_frame = df[df.subject_id.isin(fold_subjects)]
-        train_frame = df[~df.subject_id.isin(fold_subjects)]
-        set_seed(SEED + i)
-        state, val, _ = train_one(train_frame, val_frame, data_dir, device, args,
-                                  n_classes, tag=f"[fold {i}] ")
-        fold_results.append(val)
-        print(f"[fold {i}] sessions={val['sessions']} acc={val['accuracy']:.3f} "
-              f"f1={val['f1']:.3f} auc={val['auc']:.3f}")
-        if i == 0:
-            deployed_state, deployed_val = state, val
+    for seed in seeds:
+        folds = subject_folds(df, args.folds, seed=seed)
+        for i, fold_subjects in enumerate(folds):
+            val_frame = df[df.subject_id.isin(fold_subjects)]
+            train_frame = df[~df.subject_id.isin(fold_subjects)]
+            set_seed(seed + i)
+            tag = f"[fold {i}] " if len(seeds) == 1 else f"[seed {seed} fold {i}] "
+            state, val, _ = train_one(train_frame, val_frame, data_dir, device, args,
+                                      n_classes, tag=tag)
+            val["seed"], val["fold"] = seed, i
+            fold_results.append(val)
+            print(f"{tag}sessions={val['sessions']} acc={val['accuracy']:.3f} "
+                  f"f1={val['f1']:.3f} auc={val['auc']:.3f}")
+            if seed == seeds[0] and i == 0:
+                deployed_state, deployed_val = state, val
 
     def agg(key):
         vals = [f[key] for f in fold_results]
@@ -349,7 +427,10 @@ def main() -> None:
 
     cv = {
         "folds": args.folds,
+        "seeds": seeds,
+        "outer_scores": len(fold_results),
         "accuracy": agg("accuracy"),
+        "balanced_accuracy": agg("balanced_accuracy"),
         "f1": agg("f1"),
         "macro_f1": agg("macro_f1"),
         "auc": agg("auc"),
@@ -369,18 +450,21 @@ def main() -> None:
 
     if args.save_preds:
         rows = []
-        for fold_i, f in enumerate(fold_results):
+        for f in fold_results:
+            # multi-seed runs need a unique per-run fold key for ensemble joins
+            fold_key = f["fold"] if len(seeds) == 1 else f"{f['seed']}-{f['fold']}"
             for d in f["sessions_detail"]:
-                row = {"fold": fold_i, "session": d["session"], "label": d["label"]}
+                row = {"fold": fold_key, "session": d["session"], "label": d["label"]}
                 row.update({f"p_{c}": round(p, 6) for c, p in enumerate(d["probs"])})
                 rows.append(row)
         preds_path = out_dir / f"preds_{args.arch}.csv"
         pd.DataFrame(rows).to_csv(preds_path, index=False)
         print(f"saved per-session predictions: {preds_path}")
 
-    torch.save({"state_dict": deployed_state, "img_size": IMG_SIZE, "classes": classes,
-                "arch": args.arch},
-               out_dir / f"mri_model{suffix}.pt")
+    if args.experiment is None:
+        torch.save({"state_dict": deployed_state, "img_size": IMG_SIZE, "classes": classes,
+                    "arch": args.arch},
+                   out_dir / f"mri_model{suffix}.pt")
 
     model_desc = {
         "resnet18": f"ResNet-18 (ImageNet transfer learning), {n_classes}-class head, finetune={args.finetune}",
@@ -423,7 +507,10 @@ def main() -> None:
     }
     (out_dir / f"mri_metrics{suffix}.json").write_text(json.dumps(metrics, indent=2))
 
-    if is_deployed_arch:
+    if args.experiment is not None:
+        print(f"experiment '{args.experiment}': metrics/preds in {out_dir} "
+              f"(deployed artifacts untouched, no weights saved, no ONNX export)")
+    elif is_deployed_arch:
         from export_onnx import export as export_onnx
 
         export_onnx(out_dir)
