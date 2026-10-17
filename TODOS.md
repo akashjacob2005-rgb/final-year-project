@@ -19,6 +19,7 @@ Captured by /plan-eng-review on 2026-09-01 (MRI pathway review).
 - **Depends on:** Nothing.
 
 ## 3. Calibrate MRI probabilities after Phase B
+- **Status (2026-10-17):** machinery done — `compare_experiments.py --calibrate` fits temperature + threshold on OOF preds, `promote.py` stores them in `mri_metrics.json["calibration"]`, backend applies them. Remaining: run the experiments in `docs/MRI_EXPERIMENTS.md` and promote a winner.
 - **What:** Fit temperature/Platt scaling on pooled out-of-fold predictions from the 518-subject retrain; re-check normal-class recall; store the calibrator with the artifact and apply it in `backend/app/ml/mri_model.py`.
 - **Why:** Current confidences are uncalibrated: 2:1 impaired training prior + class-weighted loss means displayed probabilities lean impaired (deployed fold-0 normal recall: 0.583). The UI now discloses this (Issue 8, option 8A); calibration is the real fix.
 - **Pros:** Displayed percentages become trustworthy; removes the strongest examiner attack on the demo.

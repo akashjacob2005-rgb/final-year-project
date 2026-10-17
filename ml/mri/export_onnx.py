@@ -40,26 +40,38 @@ class ResNetWithCam(nn.Module):
         return logits, cam
 
 
-def export(artifacts_dir: Path) -> Path:
-    ckpt = torch.load(artifacts_dir / "mri_model.pt", map_location="cpu", weights_only=False)
-    n_classes = len(ckpt["classes"])
-    img_size = ckpt["img_size"]
-
+def load_resnet(ckpt_path: Path) -> nn.Module:
+    """Rebuild the trained torchvision ResNet-18 from a mri_model.pt checkpoint."""
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     resnet = models.resnet18()
-    resnet.fc = nn.Linear(resnet.fc.in_features, n_classes)
+    resnet.fc = nn.Linear(resnet.fc.in_features, len(ckpt["classes"]))
     resnet.load_state_dict(ckpt["state_dict"])
-    model = ResNetWithCam(resnet).eval()
+    return resnet.eval()
 
-    out = artifacts_dir / "mri_model.onnx"
-    torch.onnx.export(
-        model,
-        torch.randn(1, 3, img_size, img_size),
-        str(out),
+
+def export(artifacts_dir: Path, ckpt_path: Path | None = None,
+           out_path: Path | None = None) -> Path:
+    """Export <artifacts_dir>/mri_model.pt -> mri_model.onnx, or explicit paths
+    (experiment runs export ml/experiments/<name>/final/model.onnx)."""
+    ckpt_path = ckpt_path or artifacts_dir / "mri_model.pt"
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    img_size = ckpt["img_size"]
+    model = ResNetWithCam(load_resnet(ckpt_path)).eval()
+
+    out = out_path or artifacts_dir / "mri_model.onnx"
+    kwargs = dict(
         input_names=["input"],
         output_names=["logits", "cam"],
         dynamic_axes={"input": {0: "batch"}, "logits": {0: "batch"}, "cam": {0: "batch"}},
         opset_version=17,
     )
+    try:
+        # torch >= 2.9 defaults to the dynamo exporter, which emits opset 18
+        # and loses the dynamic batch axis on outputs; keep the TorchScript
+        # exporter so every artifact matches the one the backend was tested on.
+        torch.onnx.export(model, torch.randn(1, 3, img_size, img_size), str(out), dynamo=False, **kwargs)
+    except TypeError:  # older torch without the dynamo kwarg
+        torch.onnx.export(model, torch.randn(1, 3, img_size, img_size), str(out), **kwargs)
     print(f"exported {out} (outputs: logits, cam)")
     return out
 

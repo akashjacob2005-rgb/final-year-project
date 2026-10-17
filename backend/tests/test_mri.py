@@ -193,6 +193,42 @@ def test_analyze_disabled_via_env(auth_client, monkeypatch):
     assert r.status_code == 503
 
 
+def test_calibration_block_rescales_and_rethresholds(monkeypatch):
+    """A calibration block in mri_metrics.json must (a) change the displayed
+    probability via temperature, (b) decide at its threshold, not argmax, and
+    (c) be a no-op when absent — older artifacts keep plain argmax."""
+    slices = [np.full((64, 64), 128, dtype=np.uint8)] * 4
+    raw = np.array([[0.2, 0.8]] * len(slices), dtype=np.float32)
+    logits = np.log(raw)
+
+    class FakeSession:
+        def run(self, _names, _feed):
+            return [logits, np.zeros((len(slices), 2, 7, 7), dtype=np.float32)]
+
+    monkeypatch.setattr(mri_model, "_get_session", lambda: FakeSession())
+
+    monkeypatch.setattr(mri_model, "model_metrics", lambda: {"classes": ["n", "i"]})
+    plain = mri_model.score_slices(slices)
+    assert plain["calibration"] is None
+    assert plain["top"] == 1 and abs(plain["probs"][1] - 0.8) < 1e-4
+
+    # Threshold above the raw score flips the decision; T=1 keeps the number.
+    monkeypatch.setattr(mri_model, "model_metrics",
+                        lambda: {"classes": ["n", "i"],
+                                 "calibration": {"temperature": 1.0, "threshold": 0.85}})
+    cal = mri_model.score_slices(slices)
+    assert cal["top"] == 0 and abs(cal["probs"][1] - 0.8) < 1e-4
+
+    # Temperature > 1 pulls the probability towards 0.5 (less overconfident).
+    monkeypatch.setattr(mri_model, "model_metrics",
+                        lambda: {"classes": ["n", "i"],
+                                 "calibration": {"temperature": 2.0, "threshold": 0.5}})
+    soft = mri_model.score_slices(slices)
+    assert 0.5 < soft["probs"][1] < 0.8 and soft["top"] == 1
+    assert abs(soft["probs"].sum() - 1.0) < 1e-6
+    assert np.allclose(soft["raw_probs"], [0.2, 0.8], atol=1e-4)
+
+
 def test_enabled_fails_closed_in_production(monkeypatch):
     monkeypatch.delenv("MRI_ENABLED", raising=False)
     monkeypatch.setenv("ENVIRONMENT", "production")

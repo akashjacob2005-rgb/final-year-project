@@ -178,6 +178,61 @@ def _to_model_input(slices: list[np.ndarray]) -> np.ndarray:
     return np.stack(batch).astype(np.float32)
 
 
+def calibration() -> dict | None:
+    """Optional {temperature, threshold} block written by ml/mri/promote.py.
+
+    Fitted by compare_experiments.py on out-of-fold predictions: temperature
+    rescales the session probability so displayed percentages match observed
+    frequencies, and threshold is the operating point that balances normal
+    and impaired recall (the 0.5 argmax favoured 'impaired' because training
+    is 2:1 impaired). Absent on older artifacts -> plain argmax, as before.
+    """
+    cal = (model_metrics() or {}).get("calibration")
+    if not cal or "temperature" not in cal or "threshold" not in cal:
+        return None
+    return {"temperature": float(cal["temperature"]), "threshold": float(cal["threshold"])}
+
+
+def _softmax(logits: np.ndarray) -> np.ndarray:
+    e = np.exp(logits - logits.max(axis=1, keepdims=True))
+    return e / e.sum(axis=1, keepdims=True)
+
+
+def score_slices(slices: list[np.ndarray]) -> dict:
+    """Run the model on preprocessed slices: hflip-TTA slice probabilities,
+    session probabilities (calibrated when the artifact carries a calibration
+    block), the decision, and the CAM tensors. Shared by the API route and
+    ml/mri/external_validate.py so both can never disagree."""
+    x = _to_model_input(slices)
+    run = _get_session().run
+    out_a = run(None, {"input": x})
+    out_b = run(None, {"input": x[:, :, :, ::-1].copy()})
+
+    # Average PROBABILITIES across the TTA pair — the same aggregation
+    # session_eval used during validation. Summing logits first would sharpen
+    # every distribution and show confidences the metrics never measured.
+    slice_probs = (_softmax(out_a[0]) + _softmax(out_b[0])) / 2
+    raw_probs = slice_probs.mean(axis=0)  # mean over slices
+    probs = raw_probs
+    top = int(raw_probs.argmax())
+
+    cal = calibration()
+    if cal is not None and raw_probs.shape[0] == 2:
+        # Same transform compare_experiments.py fitted on OOF session
+        # probabilities; monotone, so the ranking/AUC is untouched.
+        p1 = float(np.clip(raw_probs[1], 1e-7, 1 - 1e-7))
+        z = np.log(p1 / (1 - p1)) / cal["temperature"]
+        p1 = float(1.0 / (1.0 + np.exp(-z)))
+        probs = np.array([1.0 - p1, p1])
+        top = int(p1 >= cal["threshold"])
+
+    cam = None
+    if len(out_a) > 1:
+        cam = (out_a[1] + out_b[1][:, :, :, ::-1]) / 2  # un-flip the TTA pass
+    return {"probs": probs, "raw_probs": raw_probs, "top": top,
+            "slice_probs": slice_probs, "cam": cam, "calibration": cal}
+
+
 def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
     """Analyse an uploaded volume (.nii/.nii.gz, or a zipped DICOM series)."""
     from mri.preprocess import extract_slices, load_nifti_bytes  # shared ml/ code
@@ -201,20 +256,8 @@ def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
     except ValueError as exc:
         raise MriError(str(exc)) from exc
 
-    x = _to_model_input(slices)
-    run = _get_session().run
-    out_a = run(None, {"input": x})
-    out_b = run(None, {"input": x[:, :, :, ::-1].copy()})
-
-    def _softmax(logits: np.ndarray) -> np.ndarray:
-        e = np.exp(logits - logits.max(axis=1, keepdims=True))
-        return e / e.sum(axis=1, keepdims=True)
-
-    # Average PROBABILITIES across the TTA pair — the same aggregation
-    # session_eval used during validation. Summing logits first would sharpen
-    # every distribution and show confidences the metrics never measured.
-    slice_probs = (_softmax(out_a[0]) + _softmax(out_b[0])) / 2
-    probs = slice_probs.mean(axis=0)  # mean over slices
+    scored = score_slices(slices)
+    probs, top, slice_probs = scored["probs"], scored["top"], scored["slice_probs"]
 
     names = class_names()
     if len(names) != probs.shape[0]:
@@ -222,13 +265,12 @@ def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
             f"artifact/metrics mismatch: model outputs {probs.shape[0]} classes "
             f"but mri_metrics.json names {len(names)}"
         )
-    top = int(probs.argmax())
 
     # CAM output exists on artifacts exported by ml/mri/export_onnx.py; older
     # logits-only artifacts still work, just without the visual explanation.
     slice_views = []
-    if len(out_a) > 1:
-        cam = (out_a[1] + out_b[1][:, :, :, ::-1]) / 2  # un-flip the TTA pass
+    if scored["cam"] is not None:
+        cam = scored["cam"]
         heat = np.maximum(cam[:, top], 0.0)  # ReLU, predicted class only
         peak = heat.max()
         if peak > 0:
@@ -249,6 +291,9 @@ def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
         "predicted_class": names[top],
         "predicted_index": top,
         "confidence": round(float(probs[top]), 4),
+        "calibrated": scored["calibration"] is not None,
+        "decision_threshold": (round(scored["calibration"]["threshold"], 4)
+                               if scored["calibration"] else 0.5),
         "slices_analysed": len(slices),
         "volume_shape": list(volume.shape),
         "slices": slice_views,
@@ -262,6 +307,15 @@ def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
             "behavioural risk score; not a diagnosis."
         ),
     }
+
+
+def reset() -> None:
+    """Drop the cached ONNX session and metrics (after promote.py swaps the
+    artifact, or in tests that monkeypatch the paths)."""
+    global _session
+    with _lock:
+        _session = None
+    model_metrics.cache_clear()
 
 
 @lru_cache(maxsize=1)
