@@ -45,3 +45,12 @@ Thumbs.db
 ml/artifacts/mri_model.pt
 ml/artifacts/mri_model_vit_b16.onnx*
 ml/artifacts/mri_model_*.pt
+
+# MRI experiments (train_mri.py --experiment): summaries, configs and OOF
+# predictions are small and ARE committed so the report is reproducible;
+# weights, ONNX candidates and per-epoch curves are regenerable.
+ml/experiments/**/*.pt
+ml/experiments/**/*.onnx
+ml/experiments/**/*.onnx.data
+ml/experiments/**/history.json
+ml/experiments/**/mri_metrics.promote.json

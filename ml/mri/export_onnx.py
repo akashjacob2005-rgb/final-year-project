@@ -45,53 +45,63 @@ class ResNetWithCam(nn.Module):
         return logits, cam
 
 
-def export(artifacts_dir: Path) -> Path:
-    ckpt = torch.load(artifacts_dir / "mri_model.pt", map_location="cpu", weights_only=False)
-    n_classes = len(ckpt["classes"])
-    img_size = ckpt["img_size"]
-
+def load_resnet(ckpt_path: Path) -> nn.Module:
+    """Rebuild the trained torchvision ResNet-18 from a mri_model.pt checkpoint."""
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     resnet = models.resnet18()
-    resnet.fc = nn.Linear(resnet.fc.in_features, n_classes)
+    resnet.fc = nn.Linear(resnet.fc.in_features, len(ckpt["classes"]))
     resnet.load_state_dict(ckpt["state_dict"])
-    model = ResNetWithCam(resnet).eval()
+    return resnet.eval()
 
-    out = artifacts_dir / "mri_model.onnx"
-    torch.onnx.export(
-        model,
-        torch.randn(1, 3, img_size, img_size),
-        str(out),
-        input_names=["input"],
-        output_names=["logits", "cam"],
-        dynamic_axes={"input": {0: "batch"}, "logits": {0: "batch"}, "cam": {0: "batch"}},
-        opset_version=17,
-    )
+
+def export(artifacts_dir: Path, ckpt_path: Path | None = None,
+           out_path: Path | None = None) -> Path:
+    """Export <artifacts_dir>/mri_model.pt -> mri_model.onnx, or explicit paths
+    (experiment runs export ml/experiments/<name>/final/model.onnx)."""
+    ckpt_path = ckpt_path or artifacts_dir / "mri_model.pt"
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    img_size = ckpt["img_size"]
+    model = ResNetWithCam(load_resnet(ckpt_path)).eval()
+
+    out = out_path or artifacts_dir / "mri_model.onnx"
+    _onnx_export(model, img_size, out, ["logits", "cam"])
     print(f"exported {out} (outputs: logits, cam)")
     return out
 
 
-def export_transformer(arch: str, artifacts_dir: Path) -> Path:
+def _onnx_export(model: nn.Module, img_size: int, out: Path, outputs: list[str]) -> None:
+    kwargs = dict(
+        input_names=["input"],
+        output_names=outputs,
+        dynamic_axes={"input": {0: "batch"}, **{o: {0: "batch"} for o in outputs}},
+        opset_version=17,
+    )
+    dummy = torch.randn(1, 3, img_size, img_size)
+    try:
+        # torch >= 2.9 defaults to the dynamo exporter, which emits opset 18
+        # and loses the dynamic batch axis on outputs; keep the TorchScript
+        # exporter so every artifact matches the one the backend was tested on.
+        torch.onnx.export(model, dummy, str(out), dynamo=False, **kwargs)
+    except TypeError:  # older torch without the dynamo kwarg
+        torch.onnx.export(model, dummy, str(out), **kwargs)
+
+
+def export_transformer(arch: str, artifacts_dir: Path, ckpt_path: Path | None = None,
+                       out_path: Path | None = None) -> Path:
     """Export a HF transformer member (dinov2_s / vit_b16) to logits-only ONNX."""
     import sys
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from train_mri import ARCHS, HFClassifier  # noqa: PLC0415
 
-    ckpt = torch.load(artifacts_dir / f"mri_model_{arch}.pt",
-                      map_location="cpu", weights_only=False)
+    ckpt_path = ckpt_path or artifacts_dir / f"mri_model_{arch}.pt"
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     model = HFClassifier(ARCHS[arch]["hf"], len(ckpt["classes"]))
     model.load_state_dict(ckpt["state_dict"])
     model.eval()
 
-    out = artifacts_dir / f"mri_model_{arch}.onnx"
-    torch.onnx.export(
-        model,
-        torch.randn(1, 3, ckpt["img_size"], ckpt["img_size"]),
-        str(out),
-        input_names=["input"],
-        output_names=["logits"],
-        dynamic_axes={"input": {0: "batch"}, "logits": {0: "batch"}},
-        opset_version=17,
-    )
+    out = out_path or artifacts_dir / f"mri_model_{arch}.onnx"
+    _onnx_export(model, ckpt["img_size"], out, ["logits"])
     print(f"exported {out} (output: logits)")
     return out
 

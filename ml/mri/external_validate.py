@@ -68,26 +68,32 @@ def load_oasis1_axial_slices(img_path: Path) -> list[np.ndarray]:
     return out
 
 
-def predict_slices(slices: list[np.ndarray]) -> float:
-    """Impaired-class probability, matching the deployed TTA/aggregation."""
-    x = mri_model._to_model_input(slices)
-    run = mri_model._get_session().run
-    out_a = run(None, {"input": x})
-    out_b = run(None, {"input": x[:, :, :, ::-1].copy()})
-
-    def sm(z):
-        e = np.exp(z - z.max(axis=1, keepdims=True))
-        return e / e.sum(axis=1, keepdims=True)
-
-    probs = ((sm(out_a[0]) + sm(out_b[0])) / 2).mean(axis=0)
-    return float(probs[1])
+def predict_slices(slices: list[np.ndarray]) -> tuple[float, int]:
+    """(impaired probability, decision) exactly as the deployed API computes
+    them — including the calibration block, when the artifact has one."""
+    scored = mri_model.score_slices(slices)
+    return float(scored["probs"][1]), int(scored["top"])
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--oasis1-dir", required=True)
     ap.add_argument("--out-csv", default=str(REPO / "docs" / "external_validation_oasis1.csv"))
+    ap.add_argument("--model-dir", default=None,
+                    help="evaluate a candidate bundle instead of ml/artifacts: a directory laid "
+                         "out like ml/artifacts (mri_model.onnx [+ mri_model_<arch>.onnx], "
+                         "mri_metrics.json [+ mri_ensemble_metrics.json]) — promote.py --stage-only builds one")
     args = ap.parse_args()
+
+    if args.model_dir:
+        d = Path(args.model_dir).expanduser().resolve()
+        mri_model.MRI_MODEL_PATH = d / "mri_model.onnx"
+        mri_model.MRI_METRICS_PATH = d / "mri_metrics.json"
+        mri_model.MRI_ENSEMBLE_METRICS_PATH = d / "mri_ensemble_metrics.json"
+        mri_model.reset()
+    members = mri_model.member_files_present()
+    print(f"evaluating {mri_model.MRI_MODEL_PATH.parent}: members {members}, "
+          f"{'calibrated' if mri_model.calibration(members) else 'uncalibrated (argmax)'}")
 
     rows = []
     subj_dirs = sorted(Path(args.oasis1_dir).expanduser().glob("OAS1_*_MR1"))
@@ -100,13 +106,13 @@ def main() -> None:
             continue
         cdr = read_cdr(txts[0])
         try:
-            p = predict_slices(load_oasis1_axial_slices(Path(imgs[0])))
+            p, pred = predict_slices(load_oasis1_axial_slices(Path(imgs[0])))
         except Exception as exc:
             print(f"FAIL {d.name}: {exc}")
             continue
         label = None if cdr is None else (0 if cdr == 0 else 1)
         rows.append({"session": d.name, "cdr": cdr, "label": label,
-                     "p_impaired": round(p, 4), "pred": int(p >= 0.5)})
+                     "p_impaired": round(p, 4), "pred": pred})
         print(f"{d.name}: CDR={cdr} p_impaired={p:.3f}")
 
     with open(args.out_csv, "w", newline="") as f:

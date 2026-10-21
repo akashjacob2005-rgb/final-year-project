@@ -101,7 +101,8 @@ averaged across members with equal weights — byte-identical math to
 ## Reproduce
 
 ```bash
-# Colab (free T4 GPU, ~1 h total): run ml/mri/colab_train.ipynb top to bottom.
+# Colab (free T4 GPU): ml/mri/colab_train.ipynb now runs the experiment list in
+# docs/MRI_EXPERIMENTS.md; add ('arch_vit', '--arch vit_b16 ...') entries to it.
 # Locally (MPS, slower):
 ml/mri/.venv/bin/python ml/mri/train_mri.py \
     --data-dir ~/Downloads/7th_sem/PP-2/data/processed_v2 \
@@ -109,6 +110,12 @@ ml/mri/.venv/bin/python ml/mri/train_mri.py \
 ml/mri/.venv/bin/python ml/mri/ensemble_eval.py \
     ml/artifacts/preds_resnet18.csv ml/artifacts/preds_dinov2_s.csv
 ```
+
+> **Caveat on every number above.** These runs early-stopped on the fold they
+> report, so they are model-selection-optimistic (by roughly the same amount
+> for every arch, which is why the *comparison* still stands). The honest
+> protocol, adoption rule and the experiments that replace this table live in
+> `docs/MRI_EXPERIMENTS.md`.
 
 Transformer runs write `mri_metrics_<arch>.json` / `mri_model_<arch>.pt` /
 `preds_<arch>.csv` only — the deployed `mri_model.pt`, `mri_metrics.json` and

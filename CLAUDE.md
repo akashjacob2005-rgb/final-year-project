@@ -17,7 +17,8 @@ by design — no dataset pairs the two.
 - Run app: `./run.sh` (backend :8000 + vite :5173), or `backend/.venv/bin/uvicorn app.main:app --app-dir backend --port 8000` + `cd frontend && npx vite`.
 - Backend tests: `cd backend && .venv/bin/python -m pytest tests/ -q` (must stay green).
 - Frontend build check: `cd frontend && npx vite build`.
-- MRI retrain: `ml/mri/.venv/bin/python ml/mri/train_mri.py --data-dir <data>/processed_v2 --folds 5`.
+- MRI retrain (legacy, writes artifacts directly): `ml/mri/.venv/bin/python ml/mri/train_mri.py --data-dir <data>/processed_v2 --folds 5`.
+- MRI experiments (honest protocol, never touch artifacts): `train_mri.py --experiment NAME --sched cosine --repeats 3 ...` → `compare_experiments.py --baseline e01_baseline_honest` → `promote.py NAME --yes`. Rules + adoption bar: `docs/MRI_EXPERIMENTS.md`. Colab runner: `ml/mri/colab_train.ipynb`.
 
 ## Gotchas
 - **Never `git push` without the user's explicit go-ahead** — push auto-deploys the backend to Render.

@@ -78,6 +78,14 @@ function PlainExplanation({ result, fileName }) {
 const HONESTY_TEXT =
   'One honest caveat: this model was trained on a research dataset with more impaired than healthy scans, and its percentages are not calibrated probabilities. In validation it flagged a meaningful share of healthy scans as impaired, so an "impairment" result here is a prompt to check properly — not a measured risk.'
 
+// Shown instead once the deployed artifact carries a calibration block
+// (ml/mri/promote.py): the percentage is then rescaled to match observed
+// frequencies and the decision cut-off balances healthy and impaired recall.
+const CALIBRATED_TEXT =
+  'One honest caveat: this model was trained on a research dataset, and its percentages were calibrated on held-out scans so they are closer to real frequencies — but it still misclassifies a meaningful share of scans in both directions. An "impairment" result here is a prompt to check properly — not a measured risk.'
+
+const honestyText = (result) => (result && result.calibrated ? CALIBRATED_TEXT : HONESTY_TEXT)
+
 function SliceViewer({ result }) {
   const impaired = result.predicted_index > 0
   const [showAttention, setShowAttention] = useState(false)
@@ -494,7 +502,7 @@ export default function MriAnalysis() {
           </div>
 
           {impaired && (
-            <div className="alert alert-warn" role="note">{HONESTY_TEXT}</div>
+            <div className="alert alert-warn" role="note">{honestyText(result)}</div>
           )}
 
           {Object.entries(result.probabilities).map(([name, p], i, all) => (
@@ -517,7 +525,7 @@ export default function MriAnalysis() {
             fileName={result.sample ? `the ${result.sample} sample scan` : file?.name}
           />
           {!impaired && (
-            <p className="tiny muted mt-2" style={{ lineHeight: 1.6 }}>{HONESTY_TEXT}</p>
+            <p className="tiny muted mt-2" style={{ lineHeight: 1.6 }}>{honestyText(result)}</p>
           )}
 
           <div className="disclaimer mt-3">{result.note}</div>

@@ -48,6 +48,10 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("preds", nargs="+", help="two or more preds_<arch>.csv files")
     ap.add_argument("--out", default=None, help="optional JSON output path")
+    ap.add_argument("--write-preds", default=None, metavar="DIR",
+                    help="also write the averaged predictions as an experiment dir "
+                         "(preds_sessions.csv + summary.json) so compare_experiments.py "
+                         "can compare and --calibrate the ensemble like any single model")
     args = ap.parse_args()
     if len(args.preds) < 2:
         ap.error("need at least two preds CSVs to ensemble")
@@ -87,6 +91,33 @@ def main() -> None:
     if args.out:
         Path(args.out).write_text(json.dumps(summary, indent=2))
         print(f"written: {args.out}")
+    if args.write_preds:
+        write_experiment(ens, prob_cols, summary, Path(args.write_preds))
+
+
+def write_experiment(ens: pd.DataFrame, prob_cols: list[str], summary: dict, out_dir: Path) -> None:
+    """Averaged OOF predictions in compare_experiments.py's format. Fold keys
+    "<seed>-<fold>" (repeated CV) are split back into repeat + fold."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    df = ens.copy()
+    key = df["fold"].astype(str)
+    if key.str.contains("-").any():
+        parts = key.str.split("-", n=1, expand=True)
+        seeds = sorted(parts[0].astype(int).unique())
+        df["repeat"] = parts[0].astype(int).map({s: i for i, s in enumerate(seeds)})
+        df["fold"] = parts[1].astype(int)
+    else:
+        df["repeat"] = 0
+        df["fold"] = key.astype(int)
+    df["seed"] = 0
+    df["source"] = df["session"].map(lambda s: "oasis1" if str(s).upper().startswith("OAS1") else "oasis3")
+    cols = ["repeat", "fold", "seed", "session", "source", "label"] + prob_cols
+    df[cols].to_csv(out_dir / "preds_sessions.csv", index=False)
+    (out_dir / "summary.json").write_text(json.dumps({
+        "experiment": out_dir.name, "arch": "ensemble:" + "+".join(summary["members"]),
+        "members": summary["members"], "cv": {k: summary[k] for k in ("accuracy", "f1", "auc")},
+    }, indent=2))
+    print(f"ensemble experiment written: {out_dir} (compare_experiments.py {out_dir.name} --calibrate {out_dir.name})")
 
 
 if __name__ == "__main__":

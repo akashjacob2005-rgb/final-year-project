@@ -193,6 +193,61 @@ def test_analyze_disabled_via_env(auth_client, monkeypatch):
     assert r.status_code == 503
 
 
+def test_calibration_block_rescales_and_rethresholds(monkeypatch):
+    """A calibration block must (a) change the displayed probability via
+    temperature, (b) decide at its threshold, not argmax, (c) be a no-op when
+    absent, and (d) only apply to the member set it was fitted on."""
+    slices = [np.full((64, 64), 128, dtype=np.uint8)] * 4
+    monkeypatch.setattr(mri_model, "_sessions", {"resnet18": _FakeSession(0.8)})
+    monkeypatch.setattr(mri_model, "member_files_present", lambda: ["resnet18"])
+
+    def metrics_with(cal):
+        m = {"classes": ["n", "i"]}
+        if cal is not None:
+            m["calibration"] = cal
+        return lambda: m
+
+    monkeypatch.setattr(mri_model, "model_metrics", metrics_with(None))
+    plain = mri_model.score_slices(slices)
+    assert plain["calibration"] is None
+    assert plain["top"] == 1 and abs(plain["probs"][1] - 0.8) < 1e-4
+
+    # Threshold above the raw score flips the decision; T=1 keeps the number.
+    monkeypatch.setattr(mri_model, "model_metrics",
+                        metrics_with({"temperature": 1.0, "threshold": 0.85}))
+    cal = mri_model.score_slices(slices)
+    assert cal["top"] == 0 and abs(cal["probs"][1] - 0.8) < 1e-4
+
+    # Temperature > 1 pulls the probability towards 0.5 (less overconfident).
+    monkeypatch.setattr(mri_model, "model_metrics",
+                        metrics_with({"temperature": 2.0, "threshold": 0.5}))
+    soft = mri_model.score_slices(slices)
+    assert 0.5 < soft["probs"][1] < 0.8 and soft["top"] == 1
+    assert abs(soft["probs"].sum() - 1.0) < 1e-6
+    assert np.allclose(soft["raw_probs"], [0.2, 0.8], atol=1e-4)
+
+    # A calibration fitted for a different member set is ignored.
+    monkeypatch.setattr(mri_model, "model_metrics",
+                        metrics_with({"temperature": 1.0, "threshold": 0.85,
+                                      "members": ["resnet18", "vit_b16"]}))
+    assert mri_model.score_slices(slices)["calibration"] is None
+
+
+def test_ensemble_calibration_comes_from_ensemble_metrics(monkeypatch):
+    slices = [np.full((64, 64), 128, dtype=np.uint8)] * 4
+    monkeypatch.setattr(mri_model, "_sessions",
+                        {"resnet18": _FakeSession(0.9), "dinov2_s": _FakeSession(0.5)})
+    monkeypatch.setattr(mri_model, "member_files_present", lambda: ["resnet18", "dinov2_s"])
+    monkeypatch.setattr(mri_model, "model_metrics", lambda: {
+        "classes": ["n", "i"], "calibration": {"temperature": 1.0, "threshold": 0.99}})
+    monkeypatch.setattr(mri_model, "ensemble_metrics", lambda: {
+        "calibration": {"temperature": 1.0, "threshold": 0.75,
+                        "members": ["dinov2_s", "resnet18"]}})
+    out = mri_model.score_slices(slices)
+    assert out["calibration"]["threshold"] == 0.75  # ensemble block, not the ResNet's
+    assert abs(out["raw_probs"][1] - 0.7) < 1e-4 and out["top"] == 0
+
+
 def test_enabled_fails_closed_in_production(monkeypatch):
     monkeypatch.delenv("MRI_ENABLED", raising=False)
     monkeypatch.setenv("ENVIRONMENT", "production")

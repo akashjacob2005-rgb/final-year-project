@@ -110,10 +110,17 @@ def enabled() -> bool:
     return MRI_MODEL_PATH.exists()
 
 
+def _model_dir():
+    """Directory holding the member ONNX files: the artifacts dir, or a
+    candidate bundle when promote.py / external_validate.py --model point
+    MRI_MODEL_PATH elsewhere."""
+    return MRI_MODEL_PATH.parent
+
+
 def member_files_present() -> list[str]:
     """Arch names whose ONNX artifact exists — cheap, no model load."""
     return [arch for arch, fname, _, _ in _MEMBERS
-            if (paths.ARTIFACTS_DIR / fname).exists()]
+            if (_model_dir() / fname).exists()]
 
 
 def _get_sessions() -> list[tuple[str, object, np.ndarray, np.ndarray]]:
@@ -127,7 +134,7 @@ def _get_sessions() -> list[tuple[str, object, np.ndarray, np.ndarray]]:
             import onnxruntime as ort
 
             for arch, fname, _, _ in _MEMBERS:
-                path = paths.ARTIFACTS_DIR / fname
+                path = _model_dir() / fname
                 if not path.exists():
                     if arch == "resnet18":
                         raise MriUnavailable("MRI model artifact is missing")
@@ -218,6 +225,76 @@ def _to_model_input(slices: list[np.ndarray],
     return ((raw - mean[None, :, None, None]) / std[None, :, None, None]).astype(np.float32)
 
 
+def _softmax(logits: np.ndarray) -> np.ndarray:
+    e = np.exp(logits - logits.max(axis=1, keepdims=True))
+    return e / e.sum(axis=1, keepdims=True)
+
+
+def calibration(members: list[str] | None = None) -> dict | None:
+    """Optional {temperature, threshold} fitted by compare_experiments.py on
+    out-of-fold predictions and installed by ml/mri/promote.py.
+
+    Temperature rescales the session probability so displayed percentages
+    match observed frequencies; threshold is the operating point that
+    balances normal and impaired recall (argmax at 0.5 favoured 'impaired'
+    because training is 2:1 impaired). A calibration is only valid for the
+    exact member set it was fitted on: the ensemble's lives in
+    mri_ensemble_metrics.json, the single ResNet's in mri_metrics.json.
+    Absent or mismatched -> None -> plain argmax, as before.
+    """
+    if members is None:
+        members = member_files_present()
+    source = ensemble_metrics() if len(members) > 1 else model_metrics()
+    cal = (source or {}).get("calibration")
+    if not cal or "temperature" not in cal or "threshold" not in cal:
+        return None
+    if sorted(cal.get("members", ["resnet18"])) != sorted(members):
+        return None
+    return {"temperature": float(cal["temperature"]), "threshold": float(cal["threshold"])}
+
+
+def score_slices(slices: list[np.ndarray]) -> dict:
+    """Run every loaded member on preprocessed slices.
+
+    Returns hflip-TTA slice probabilities averaged over members, the session
+    probabilities (calibrated when a matching calibration block exists), the
+    decision, and the ResNet's raw outputs for CAM. Shared by predict() and
+    ml/mri/external_validate.py so the API and the external test can never
+    disagree.
+    """
+    # Average PROBABILITIES across the TTA pair and across ensemble members —
+    # the same aggregation session_eval / ensemble_eval used during validation.
+    # Summing logits first would sharpen every distribution and show
+    # confidences the metrics never measured.
+    raw = _to_raw_batch(slices)
+    members = _get_sessions()
+    slice_probs = None
+    resnet_out = None  # the (a, b) TTA outputs of the CAM-carrying member
+    for arch, sess, mean, std in members:
+        x = ((raw - mean[None, :, None, None]) / std[None, :, None, None]).astype(np.float32)
+        out_a = sess.run(None, {"input": x})
+        out_b = sess.run(None, {"input": x[:, :, :, ::-1].copy()})
+        member_probs = (_softmax(out_a[0]) + _softmax(out_b[0])) / 2
+        slice_probs = member_probs if slice_probs is None else slice_probs + member_probs
+        if arch == "resnet18":
+            resnet_out = (out_a, out_b)
+    slice_probs = slice_probs / len(members)
+    raw_probs = slice_probs.mean(axis=0)  # mean over slices
+    probs, top = raw_probs, int(raw_probs.argmax())
+
+    member_names = [arch for arch, _, _, _ in members]
+    cal = calibration(member_names)
+    if cal is not None and raw_probs.shape[0] == 2:
+        # Same monotone transform compare_experiments.py fitted on OOF session
+        # probabilities, so the ranking (AUC) is untouched.
+        p1 = float(np.clip(raw_probs[1], 1e-7, 1 - 1e-7))
+        p1 = float(1.0 / (1.0 + np.exp(-np.log(p1 / (1 - p1)) / cal["temperature"])))
+        probs = np.array([1.0 - p1, p1])
+        top = int(p1 >= cal["threshold"])
+    return {"probs": probs, "raw_probs": raw_probs, "top": top, "slice_probs": slice_probs,
+            "resnet_out": resnet_out, "members": member_names, "calibration": cal}
+
+
 def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
     """Analyse an uploaded volume (.nii/.nii.gz, or a zipped DICOM series)."""
     from mri.preprocess import extract_slices, load_nifti_bytes  # shared ml/ code
@@ -241,28 +318,9 @@ def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
     except ValueError as exc:
         raise MriError(str(exc)) from exc
 
-    def _softmax(logits: np.ndarray) -> np.ndarray:
-        e = np.exp(logits - logits.max(axis=1, keepdims=True))
-        return e / e.sum(axis=1, keepdims=True)
-
-    # Average PROBABILITIES across the TTA pair and across ensemble members —
-    # the same aggregation session_eval / ensemble_eval used during validation.
-    # Summing logits first would sharpen every distribution and show
-    # confidences the metrics never measured.
-    raw = _to_raw_batch(slices)
-    members = _get_sessions()
-    slice_probs = None
-    resnet_out = None  # the (a, b) TTA outputs of the CAM-carrying member
-    for arch, sess, mean, std in members:
-        x = ((raw - mean[None, :, None, None]) / std[None, :, None, None]).astype(np.float32)
-        out_a = sess.run(None, {"input": x})
-        out_b = sess.run(None, {"input": x[:, :, :, ::-1].copy()})
-        member_probs = (_softmax(out_a[0]) + _softmax(out_b[0])) / 2
-        slice_probs = member_probs if slice_probs is None else slice_probs + member_probs
-        if arch == "resnet18":
-            resnet_out = (out_a, out_b)
-    slice_probs = slice_probs / len(members)
-    probs = slice_probs.mean(axis=0)  # mean over slices
+    scored = score_slices(slices)
+    probs, top, slice_probs = scored["probs"], scored["top"], scored["slice_probs"]
+    resnet_out, member_names = scored["resnet_out"], scored["members"]
 
     names = class_names()
     if len(names) != probs.shape[0]:
@@ -270,7 +328,6 @@ def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
             f"artifact/metrics mismatch: model outputs {probs.shape[0]} classes "
             f"but mri_metrics.json names {len(names)}"
         )
-    top = int(probs.argmax())
 
     # CAM output exists on artifacts exported by ml/mri/export_onnx.py; older
     # logits-only artifacts still work, just without the visual explanation.
@@ -294,7 +351,6 @@ def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
                 }
             )
 
-    member_names = [arch for arch, _, _, _ in members]
     explanation = (
         "Heatmaps show the regions that most influenced the model's decision "
         "(class activation mapping). They indicate model attention, not a "
@@ -312,6 +368,9 @@ def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
         "predicted_class": names[top],
         "predicted_index": top,
         "confidence": round(float(probs[top]), 4),
+        "calibrated": scored["calibration"] is not None,
+        "decision_threshold": (round(scored["calibration"]["threshold"], 4)
+                               if scored["calibration"] else 0.5),
         "slices_analysed": len(slices),
         "volume_shape": list(volume.shape),
         "model_members": member_names,
@@ -322,6 +381,15 @@ def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
             "behavioural risk score; not a diagnosis."
         ),
     }
+
+
+def reset() -> None:
+    """Drop cached ONNX sessions and metrics (after promote.py swaps the
+    artifacts, or when external_validate.py --model points at a candidate)."""
+    with _lock:
+        _sessions.clear()
+    model_metrics.cache_clear()
+    ensemble_metrics.cache_clear()
 
 
 @lru_cache(maxsize=1)

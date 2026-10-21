@@ -419,8 +419,12 @@ app's six tests, so a combined weight would be a guess, and the app says so.
   lean toward "impaired" relative to a screening population; the deployed
   fold-0 model's normal-class recall is 0.583 (a substantial false-positive
   rate on healthy scans), and its quoted fold-0 numbers come from the same
-  sessions used for early stopping. The UI discloses this; temperature
-  calibration on the Phase B data is the planned fix (see TODOS.md). Uploads
+  sessions used for early stopping. The UI discloses this. The fix is in
+  place but not yet applied to an artifact: `ml/mri/compare_experiments.py`
+  fits a temperature + decision threshold on out-of-fold predictions (cross-
+  fitted, so the reported calibrated accuracy is honest), `promote.py` bakes
+  them into `mri_metrics.json["calibration"]`, and the backend applies them
+  (`mri_model.calibration()`). Protocol: `docs/MRI_EXPERIMENTS.md`. Uploads
   are reoriented to canonical RAS before slicing, so storage axis order does
   not affect results; 4D series and thin-slab volumes are rejected rather than
   silently mis-analysed.
@@ -429,6 +433,9 @@ Reproducing:
 
 ```bash
 python ml/mri/make_slices.py --data-root /path/to/data
-python ml/mri/train_mri.py --data-dir /path/to/data/processed_v2 --folds 5
-# or run ml/mri/train_mri_colab.ipynb on a free Colab T4
+python ml/mri/train_mri.py --data-dir /path/to/data/processed_v2 --folds 5   # legacy, optimistic
+# honest protocol (experiments never touch ml/artifacts; see docs/MRI_EXPERIMENTS.md):
+python ml/mri/train_mri.py --data-dir ... --experiment e01_baseline_honest \
+    --sched cosine --epochs 25 --repeats 3 --save-slice-preds
+# or run ml/mri/colab_train.ipynb on a free Colab T4
 ```
