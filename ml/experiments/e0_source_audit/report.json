@@ -1,0 +1,116 @@
+{
+  "results": {
+    "dinov2_s": {
+      "preds": "preds_dinov2_s.csv",
+      "pooled": {
+        "n": 369,
+        "base_rate_impaired": 0.542,
+        "accuracy": 0.7344,
+        "balanced_accuracy": 0.7307,
+        "auc": 0.8049,
+        "auc_mean_over_folds": 0.822
+      },
+      "per_source": {
+        "oasis1": {
+          "n": 189,
+          "base_rate_impaired": 0.423,
+          "accuracy": 0.7037,
+          "balanced_accuracy": 0.6916,
+          "auc": 0.7617,
+          "auc_mean_over_folds": 0.7759
+        },
+        "oasis3": {
+          "n": 180,
+          "base_rate_impaired": 0.667,
+          "accuracy": 0.7667,
+          "balanced_accuracy": 0.7083,
+          "auc": 0.8208,
+          "auc_mean_over_folds": 0.8458
+        }
+      },
+      "within_source_auc_weighted": 0.7905,
+      "pooled_minus_within_gap": 0.0144,
+      "oasis3_auc_vs_v2_baseline": {
+        "oasis3_within_v3": 0.8208,
+        "v2_baseline": 0.844,
+        "delta": -0.0232
+      }
+    },
+    "resnet18": {
+      "preds": "preds_resnet18.csv",
+      "pooled": {
+        "n": 369,
+        "base_rate_impaired": 0.542,
+        "accuracy": 0.7453,
+        "balanced_accuracy": 0.743,
+        "auc": 0.8415,
+        "auc_mean_over_folds": 0.8473
+      },
+      "per_source": {
+        "oasis1": {
+          "n": 189,
+          "base_rate_impaired": 0.423,
+          "accuracy": 0.7196,
+          "balanced_accuracy": 0.712,
+          "auc": 0.814,
+          "auc_mean_over_folds": 0.8319
+        },
+        "oasis3": {
+          "n": 180,
+          "base_rate_impaired": 0.667,
+          "accuracy": 0.7722,
+          "balanced_accuracy": 0.7375,
+          "auc": 0.8433,
+          "auc_mean_over_folds": 0.8533
+        }
+      },
+      "within_source_auc_weighted": 0.8283,
+      "pooled_minus_within_gap": 0.0132,
+      "oasis3_auc_vs_v2_baseline": {
+        "oasis3_within_v3": 0.8433,
+        "v2_baseline": 0.844,
+        "delta": -0.0007
+      }
+    },
+    "vit_b16": {
+      "preds": "preds_vit_b16.csv",
+      "pooled": {
+        "n": 369,
+        "base_rate_impaired": 0.542,
+        "accuracy": 0.7615,
+        "balanced_accuracy": 0.7589,
+        "auc": 0.8376,
+        "auc_mean_over_folds": 0.845
+      },
+      "per_source": {
+        "oasis1": {
+          "n": 189,
+          "base_rate_impaired": 0.423,
+          "accuracy": 0.7302,
+          "balanced_accuracy": 0.7212,
+          "auc": 0.7971,
+          "auc_mean_over_folds": 0.8058
+        },
+        "oasis3": {
+          "n": 180,
+          "base_rate_impaired": 0.667,
+          "accuracy": 0.7944,
+          "balanced_accuracy": 0.7542,
+          "auc": 0.8522,
+          "auc_mean_over_folds": 0.8684
+        }
+      },
+      "within_source_auc_weighted": 0.824,
+      "pooled_minus_within_gap": 0.0136,
+      "oasis3_auc_vs_v2_baseline": {
+        "oasis3_within_v3": 0.8522,
+        "v2_baseline": 0.844,
+        "delta": 0.0082
+      }
+    }
+  },
+  "verdict": [
+    "Confound gap (resnet18): pooled AUC 0.8415 vs within-source 0.8283 -> gap +0.0132. Gap small: pooled scores are not source-driven.",
+    "OASIS-3 cohort within v3: AUC 0.8433 vs v2 baseline 0.844 -> delta -0.0007. Original cohort not harmed by mixing."
+  ]
+}

@@ -1,0 +1,136 @@
+{
+  "model": "DINOv2-small (facebook/dinov2-small, HF transformers), frozen backbone + linear head, 2-class head",
+  "task": "binary classification of T1w axial MRI slices, aggregated per session",
+  "label_mode": "binary",
+  "classes": [
+    "No impairment signs (CDR 0)",
+    "Signs of impairment (CDR >= 0.5)"
+  ],
+  "n_slices": 16,
+  "dataset": {
+    "name": "OASIS-3 (T1w MRI), labels = CDR nearest the scan date",
+    "subjects": 180,
+    "sessions": 180,
+    "slices": 2880,
+    "session_class_counts": {
+      "0": 60,
+      "1": 120
+    },
+    "split": "subject-stratified 5-fold cross-validation"
+  },
+  "aggregation": "session probability = mean of its 16 slice probabilities, with hflip TTA",
+  "cv": {
+    "folds": 5,
+    "accuracy": {
+      "mean": 0.7556,
+      "std": 0.0444
+    },
+    "f1": {
+      "mean": 0.8076,
+      "std": 0.0463
+    },
+    "macro_f1": {
+      "mean": 0.7312,
+      "std": 0.0419
+    },
+    "auc": {
+      "mean": 0.8507,
+      "std": 0.0424
+    },
+    "per_fold": [
+      {
+        "sessions": 36,
+        "accuracy": 0.8056,
+        "macro_f1": 0.7764,
+        "f1": 0.8571,
+        "auc": 0.8785,
+        "per_class_recall": [
+          0.6666666666666666,
+          0.875
+        ]
+      },
+      {
+        "sessions": 36,
+        "accuracy": 0.75,
+        "macro_f1": 0.6975,
+        "f1": 0.8235,
+        "auc": 0.8438,
+        "per_class_recall": [
+          0.5,
+          0.875
+        ]
+      },
+      {
+        "sessions": 36,
+        "accuracy": 0.6944,
+        "macro_f1": 0.6824,
+        "f1": 0.7442,
+        "auc": 0.7708,
+        "per_class_recall": [
+          0.75,
+          0.6666666666666666
+        ]
+      },
+      {
+        "sessions": 36,
+        "accuracy": 0.7222,
+        "macro_f1": 0.7143,
+        "f1": 0.7619,
+        "auc": 0.875,
+        "per_class_recall": [
+          0.8333333333333334,
+          0.6666666666666666
+        ]
+      },
+      {
+        "sessions": 36,
+        "accuracy": 0.8056,
+        "macro_f1": 0.7855,
+        "f1": 0.8511,
+        "auc": 0.8854,
+        "per_class_recall": [
+          0.75,
+          0.8333333333333334
+        ]
+      }
+    ]
+  },
+  "deployed": {
+    "which": "fold-0 model (trained on the other folds, early-stopped on fold 0)",
+    "fold0_validation": {
+      "sessions": 36,
+      "accuracy": 0.8056,
+      "macro_f1": 0.7764,
+      "f1": 0.8571,
+      "auc": 0.8785,
+      "per_class_recall": [
+        0.6666666666666666,
+        0.875
+      ],
+      "confusion_matrix": [
+        [
+          8,
+          4
+        ],
+        [
+          3,
+          21
+        ]
+      ]
+    }
+  },
+  "training": {
+    "optimizer": "Adam lr=0.001 wd=1e-4",
+    "class_weighted_loss": true,
+    "augmentation": "hflip, rot8, translate5%, jitter",
+    "seed": 42
+  },
+  "caveats": [
+    "Labels come from CDR staging, not biopsy-confirmed diagnosis.",
+    "Slices are 2D projections of a 3D volume; a 3D CNN could use more context.",
+    "OASIS-3 is a largely North-American research cohort; other scanners/populations unverified.",
+    "Out-of-distribution inputs (non-brain, CT, non-T1w) are not rejected.",
+    "Reported separately from the behavioural risk score: no dataset pairs MRI with the app's six tests."
+  ],
+  "version": "2.0.0"
+}

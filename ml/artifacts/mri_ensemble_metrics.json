@@ -1,0 +1,82 @@
+{
+  "members": [
+    "resnet18",
+    "dinov2_s",
+    "vit_b16"
+  ],
+  "folds": 5,
+  "accuracy": {
+    "mean": 0.7889,
+    "std": 0.0222
+  },
+  "f1": {
+    "mean": 0.8435,
+    "std": 0.0201
+  },
+  "macro_f1": {
+    "mean": 0.7529,
+    "std": 0.0376
+  },
+  "auc": {
+    "mean": 0.8701,
+    "std": 0.0653
+  },
+  "per_fold": [
+    {
+      "sessions": 36,
+      "accuracy": 0.7778,
+      "f1": 0.8462,
+      "macro_f1": 0.7231,
+      "auc": 0.9028,
+      "per_class_recall": [
+        0.5,
+        0.9166666666666666
+      ]
+    },
+    {
+      "sessions": 36,
+      "accuracy": 0.7778,
+      "f1": 0.8261,
+      "macro_f1": 0.7592,
+      "auc": 0.8333,
+      "per_class_recall": [
+        0.75,
+        0.7916666666666666
+      ]
+    },
+    {
+      "sessions": 36,
+      "accuracy": 0.7778,
+      "f1": 0.8519,
+      "macro_f1": 0.7037,
+      "auc": 0.7604,
+      "per_class_recall": [
+        0.4166666666666667,
+        0.9583333333333334
+      ]
+    },
+    {
+      "sessions": 36,
+      "accuracy": 0.7778,
+      "f1": 0.8182,
+      "macro_f1": 0.7662,
+      "auc": 0.9132,
+      "per_class_recall": [
+        0.8333333333333334,
+        0.75
+      ]
+    },
+    {
+      "sessions": 36,
+      "accuracy": 0.8333,
+      "f1": 0.875,
+      "macro_f1": 0.8125,
+      "auc": 0.941,
+      "per_class_recall": [
+        0.75,
+        0.875
+      ]
+    }
+  ],
+  "note": "Deployed ensemble: equal-weight probability averaging of the three members, identical math to ml/mri/ensemble_eval.py. Trained/evaluated on Colab T4, 2026-09-27, subject-stratified 5-fold CV (same folds/seed as every member). See docs/ARCH_COMPARISON.md."
+}
