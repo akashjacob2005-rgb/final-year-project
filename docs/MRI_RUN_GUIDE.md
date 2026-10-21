@@ -52,7 +52,7 @@ results page now uses the calibrated threshold and the calibrated caveat text.
 
 ---
 
-## 2 · Register every scan to a standard brain (≈ 2 h on the Mac, unattended)
+## 2 · Register every scan to a standard brain (≈ 2–4 h on the Mac, unattended)
 
 Aligns each brain to the MNI152 template and cuts slices at the same
 anatomical positions for everyone — axial, plus coronal slices through the
@@ -68,6 +68,7 @@ ml/mri/.venv/bin/python ml/mri/preprocess_registered.py --export \
     --out-dir $D/data/processed_v4 --workers 4
 ```
 
+* Measured on this test machine: ~35 s per scan overall with 4 running in parallel (≈ 3.5 h for 369); an M-series Mac is usually faster.
 * Resumable: if it stops, run the same command again — finished scans are skipped.
 * Try `--limit 3` first and open a few PNGs in `processed_v4/slices/` to check
   they look like brains (axial `_axNN.png`, coronal `_coNN.png`).
