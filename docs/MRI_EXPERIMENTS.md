@@ -67,16 +67,27 @@ Anything under ~3 pts on a single run is noise at this sample size.
 
 ## Experiment sequence
 
-| Session | Experiments | Question |
+Constraints decided with the user (2026-10-21): no more OASIS-3 data (no XNAT
+access), and the demo runs locally, so heavier preprocessing and the
+3-model ensemble are allowed at inference. Step-by-step commands:
+`docs/MRI_RUN_GUIDE.md`.
+
+| Step | What | Question |
 |---|---|---|
-| A (~2.5 h T4) | `e00_innerval` (pick E), `e01_baseline_honest`, `e02_recipe_v2` (AdamW, label smoothing, aug v2, frozen BN), `e03_recipe_v2_layer3` (+ layer3, discriminative LR) | honest reference; cheap recipe wins |
-| B (~2.5 h) | `e04_swa` (weight averaging over the cosine tail), `e05_seeds3` (3-seed probability ensemble = upper bound; weight soup deployable) | averaging; if ensemble − SWA < 1 pt, deploy SWA |
-| C (when `processed_v3` is on Drive) | `e06_v3_pooled --source-aware` (OASIS-1 discs 3–12 with a recorded CDR only — young no-CDR controls are an age shortcut) | more data; OASIS-3 subset is the apples-to-apples number |
-| D (optional, new export) | 24 axial + 24 coronal slices at 30–70 % | input; only on adoption does `preprocess.py` change (training, backend and tests together) |
+| 1 (Mac, 10 min) | calibrate the existing Sep-27 ensemble from its OOF preds (`promote.py --calibrate-deployed`) | quick win on normal recall, no retraining |
+| 2 (Mac, ~2 h CPU) | `preprocess_registered.py --export`: N4 → skull-strip → affine to MNI152; 16 axial (z −30…+45 mm) + 16 coronal through the hippocampus (y −8…−40 mm) → `processed_v4` | anatomy-aligned input |
+| 3A (Colab) | ResNet-18, same recipe: `A_v3_baseline` vs `A_v4_axial` / `A_v4_coronal` / `A_v4_both`, all on identical sessions (`--restrict-to`) and folds | which input? |
+| 3B (Colab) | on the winning input: `B_resnet_v2_swa` (AdamW, label smoothing, aug v2, layer3, SWA), `B_vit_b16`, `B_dinov2_s`, their ensemble `B_ensemble` (calibrated) | best recipe / architecture mix |
+| 4 (Mac) | `--final-only` fits on all subjects → `promote.py --stage-only` → external OASIS-1 test once → `promote.py --yes` | deploy |
+
+Registered preprocessing travels with the artifact (`mri_metrics.json`
+`"preprocessing": {"mode": "registered", "planes": [...]}`), and the backend
+runs the same `preprocess_registered.py` code at inference — training and
+inference cannot drift. It needs ANTsPy + a skull-stripper, so it is a
+local-demo feature; Render keeps the percentage-slice model.
 
 Deferred: attention-MIL pooling, age as auxiliary input (report an age-only
-logistic baseline regardless), registered/skull-stripped input (cannot run on
-the Render free tier → research ablation only).
+logistic baseline regardless).
 
 ## Deploying a winner
 

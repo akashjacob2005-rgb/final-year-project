@@ -233,6 +233,51 @@ def test_calibration_block_rescales_and_rethresholds(monkeypatch):
     assert mri_model.score_slices(slices)["calibration"] is None
 
 
+def test_preprocessing_defaults_to_percentile(monkeypatch):
+    monkeypatch.setattr(mri_model, "model_metrics", lambda: {"classes": ["n", "i"]})
+    assert mri_model.preprocessing() == {"mode": "percentile", "planes": ("axial",)}
+
+
+@needs_artifact
+def test_registered_artifact_routes_through_registration(monkeypatch):
+    """An artifact trained on registered slices must be served registered
+    slices (never the percentage pipeline), with every plane analysed."""
+    import mri.preprocess as prep_mod
+
+    calls = {}
+
+    def fake_registered(raw, volume, planes):
+        calls["planes"], calls["raw"] = planes, raw is not None
+        return [np.full((64, 64), 100, dtype=np.uint8)] * (16 * len(planes))
+
+    monkeypatch.setattr(prep_mod, "registered_slices", fake_registered)
+    monkeypatch.setattr(mri_model, "_sessions", {"resnet18": _FakeSession(0.6)})
+    monkeypatch.setattr(mri_model, "model_metrics", lambda: {
+        "classes": mri_model._FALLBACK_CLASSES,
+        "preprocessing": {"mode": "registered", "planes": ["axial", "coronal"]}})
+    out = mri_model.predict(synthetic_nifti_bytes())
+    assert calls == {"planes": ("axial", "coronal"), "raw": True}
+    assert out["slices_analysed"] == 32
+
+
+def test_registered_mode_without_ants_is_unavailable(monkeypatch):
+    import builtins
+
+    import mri.preprocess as prep_mod
+
+    real_import = builtins.__import__
+
+    def no_ants(name, *a, **k):
+        if name == "ants" or name.endswith("preprocess_registered"):
+            raise ImportError("No module named 'ants'")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", no_ants)
+    with pytest.raises(mri_model.MriUnavailable):
+        mri_model._registered(b"x", np.zeros((64, 64, 64), np.float32), ("axial",))
+    assert prep_mod  # module itself imports fine without ANTs
+
+
 def test_ensemble_calibration_comes_from_ensemble_metrics(monkeypatch):
     slices = [np.full((64, 64), 128, dtype=np.uint8)] * 4
     monkeypatch.setattr(mri_model, "_sessions",

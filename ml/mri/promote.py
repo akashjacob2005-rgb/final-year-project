@@ -105,10 +105,23 @@ def check_backend(bundle: Path) -> dict:
     mri_model.MRI_METRICS_PATH = bundle / "mri_metrics.json"
     mri_model.MRI_ENSEMBLE_METRICS_PATH = bundle / "mri_ensemble_metrics.json"
     mri_model.reset()
-    rng = np.random.default_rng(0)
-    img = nib.Nifti1Image((rng.random((64, 64, 64)) * 1000).astype(np.float32), affine=np.eye(4))
-    out = mri_model.predict(gzip.compress(img.to_bytes()))
-    if out["slices_analysed"] != preprocess.N_SLICES or len(out["slices"]) != preprocess.N_SLICES:
+    prep = mri_model.preprocessing()
+    if prep["mode"] == "registered":
+        # Registration needs a real brain; noise would fail to align.
+        if not mri_model.samples_available():
+            print("--  registered preprocessing: set MRI_SAMPLE_DIR (normal.nii.gz) to run the "
+                  "backend check on a real scan; skipped")
+            mri_model.reset()
+            return {}
+        scan = mri_model.sample_bytes("normal")
+        expected = 16 * len(prep["planes"])
+    else:
+        rng = np.random.default_rng(0)
+        img = nib.Nifti1Image((rng.random((64, 64, 64)) * 1000).astype(np.float32), affine=np.eye(4))
+        scan = gzip.compress(img.to_bytes())
+        expected = preprocess.N_SLICES
+    out = mri_model.predict(scan)
+    if out["slices_analysed"] != expected or len(out["slices"]) != expected:
         fail(f"backend returned {len(out['slices'])} heatmaps for {out['slices_analysed']} slices")
     if abs(sum(out["probabilities"].values()) - 1.0) > 1e-3:
         fail("probabilities do not sum to 1")
@@ -149,6 +162,17 @@ def stage(experiments: list[str], root: Path, cal_from: str | None, allow_uncal:
 
     resnet_metrics = json.loads((archs["resnet18"] / "mri_metrics.json").read_text())
     check_metrics(resnet_metrics, "resnet18 final/mri_metrics.json")
+    # Every member must have been trained on the same slice pipeline: the
+    # backend preprocesses once (from mri_metrics.json) for all of them.
+    prep0 = resnet_metrics.get("preprocessing", {"mode": "percentile", "planes": ["axial"]})
+    for arch in members:
+        stem = ARCH_FILES[arch].replace("mri_model", "mri_metrics")
+        m = json.loads((archs[arch] / f"{stem}.json").read_text())
+        p = m.get("preprocessing", {"mode": "percentile", "planes": ["axial"]})
+        if (p.get("mode"), p.get("planes")) != (prep0.get("mode"), prep0.get("planes")):
+            fail(f"{arch} was trained on {p.get('mode')}/{p.get('planes')} slices but the ResNet on "
+                 f"{prep0.get('mode')}/{prep0.get('planes')} — members must share one pipeline")
+    print(f"ok  preprocessing: {prep0.get('mode')} {prep0.get('planes')}")
 
     cal = None
     cal_name = cal_from or (experiments[0] if len(members) == 1 else None)

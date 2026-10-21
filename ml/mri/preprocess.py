@@ -112,3 +112,31 @@ def load_nifti_bytes(raw: bytes) -> np.ndarray:
             [data[name].astype(np.float32) for name in data.dtype.names], axis=-1
         ).mean(axis=-1)
     return np.ascontiguousarray(data, dtype=np.float32)
+
+
+def registered_slices(raw: bytes | None, volume: np.ndarray, planes: tuple[str, ...]) -> list[np.ndarray]:
+    """Template-registered slices (preprocess_registered.py), for artifacts
+    trained on a registered export (their metrics carry
+    preprocessing.mode == "registered").
+
+    `raw` is the uploaded NIfTI (its header keeps true voxel spacing and
+    orientation for the registration); DICOM uploads pass raw=None and the
+    canonical array is written with a 1 mm identity affine — the 12-dof affine
+    registration absorbs any scale difference. Needs ANTsPy + a skull-stripper
+    (local demo only: far beyond the free-tier memory budget).
+    """
+    import tempfile
+    from pathlib import Path
+
+    import nibabel as nib
+
+    from . import preprocess_registered as reg  # package-relative (mri.)
+
+    with tempfile.TemporaryDirectory(prefix="ng-reg-") as tmp:
+        path = Path(tmp) / "upload.nii"
+        if raw is not None:
+            path.write_bytes(_bounded_gunzip(raw) if raw[:2] == b"\x1f\x8b" else raw)
+        else:
+            nib.Nifti1Image(volume.astype(np.float32), np.eye(4)).to_filename(str(path))
+        return reg.registered_slices_from_path(path, planes)
+

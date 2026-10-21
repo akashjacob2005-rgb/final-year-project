@@ -230,6 +230,31 @@ def _softmax(logits: np.ndarray) -> np.ndarray:
     return e / e.sum(axis=1, keepdims=True)
 
 
+def preprocessing() -> dict:
+    """How the deployed artifact's training slices were made. Travels with
+    the artifact (mri_metrics.json "preprocessing", written by train_mri.py)
+    so inference can never silently use a different pipeline. Older
+    artifacts have no block -> the original percentage-slice pipeline."""
+    prep = (model_metrics() or {}).get("preprocessing") or {}
+    return {"mode": prep.get("mode", "percentile"),
+            "planes": tuple(prep.get("planes", ("axial",)))}
+
+
+def _registered(raw: bytes | None, volume: np.ndarray, planes: tuple[str, ...]) -> list[np.ndarray]:
+    try:
+        from mri.preprocess import registered_slices
+        return registered_slices(raw, volume, planes)
+    except ImportError as exc:
+        raise MriUnavailable(
+            "this model needs brain-template registration (ANTsPy + skull-stripping), "
+            f"which is not installed on this deployment: {exc}"
+        ) from exc
+    except ValueError:
+        raise
+    except Exception as exc:  # registration failed on this scan
+        raise MriError(f"Could not align the scan to the brain template: {exc}") from exc
+
+
 def calibration(members: list[str] | None = None) -> dict | None:
     """Optional {temperature, threshold} fitted by compare_experiments.py on
     out-of-fold predictions and installed by ml/mri/promote.py.
@@ -314,7 +339,12 @@ def predict(volume_bytes: bytes, *, is_dicom_zip: bool = False) -> dict:
     except Exception as exc:  # nibabel raises many concrete types
         raise MriError(f"Could not read the file as a NIfTI volume: {exc}") from exc
     try:
-        slices = extract_slices(volume)
+        extract_slices(volume)  # shape/thin-slab validation for every mode
+        prep = preprocessing()
+        if prep["mode"] == "registered":
+            slices = _registered(volume_bytes if not is_dicom_zip else None, volume, prep["planes"])
+        else:
+            slices = extract_slices(volume)
     except ValueError as exc:
         raise MriError(str(exc)) from exc
 

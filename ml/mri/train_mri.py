@@ -208,11 +208,18 @@ def infer_source(session: str) -> str:
     return "oasis1" if session.upper().startswith("OAS1") else "oasis3"
 
 
-def load_manifest(data_dir: Path, label_mode: str) -> pd.DataFrame:
+def manifest_path(data_dir: Path, name: str | None = None) -> Path:
+    """--manifest picks a plane set of a registered export (manifest_axial.csv,
+    manifest_coronal.csv, manifest_both.csv); default manifest_v2.csv."""
+    if name:
+        p = Path(name)
+        return p if p.is_absolute() else data_dir / p
     manifest = data_dir / "manifest_v2.csv"
-    if not manifest.exists():
-        manifest = data_dir / "manifest.csv"
-    df = pd.read_csv(manifest)
+    return manifest if manifest.exists() else data_dir / "manifest.csv"
+
+
+def load_manifest(data_dir: Path, label_mode: str, name: str | None = None) -> pd.DataFrame:
+    df = pd.read_csv(manifest_path(data_dir, name))
     df["relpath"] = df["path"].str.replace(r"^.*?slices/", "slices/", regex=True)
     df["session"] = df["relpath"].str.split("/").str[1]
     if "source" not in df.columns:
@@ -225,11 +232,8 @@ def load_manifest(data_dir: Path, label_mode: str) -> pd.DataFrame:
     return df
 
 
-def manifest_hash(data_dir: Path) -> str:
-    manifest = data_dir / "manifest_v2.csv"
-    if not manifest.exists():
-        manifest = data_dir / "manifest.csv"
-    return hashlib.md5(manifest.read_bytes()).hexdigest()[:12]
+def manifest_hash(data_dir: Path, name: str | None = None) -> str:
+    return hashlib.md5(manifest_path(data_dir, name).read_bytes()).hexdigest()[:12]
 
 
 def subject_folds(df: pd.DataFrame, k: int, seed: int = SEED,
@@ -623,6 +627,22 @@ def agg_stat(results: list[dict], key: str) -> dict:
             "std": round(float(np.std(vals)), 4) if vals else float("nan")}
 
 
+def preprocessing_block(args) -> dict:
+    """Which slice pipeline produced the training data — the backend reads
+    this to run the SAME pipeline at inference. Registered exports from
+    preprocess_registered.py --export are recognised by their manifest name."""
+    name = Path(args.manifest).name if args.manifest else ""
+    planes = {"manifest_axial.csv": ["axial"], "manifest_coronal.csv": ["coronal"],
+              "manifest_both.csv": ["axial", "coronal"]}.get(name)
+    if planes:
+        return {"mode": "registered", "planes": planes,
+                "pipeline": "N4 -> skull-strip -> affine to MNI152 -> fixed-MNI slices "
+                            "(ml/mri/preprocess_registered.py)"}
+    return {"mode": "percentile", "planes": ["axial"],
+            "pipeline": "16 axial slices at 35-65% of the volume, per-slice 1-99 percentile "
+                        "(ml/mri/preprocess.py)"}
+
+
 def build_metrics(args, df, classes, n_slices, cv, deployed: dict, extra: dict | None = None) -> dict:
     n_classes = len(classes)
     sess_labels = df.groupby("session")["label"].first()
@@ -657,6 +677,7 @@ def build_metrics(args, df, classes, n_slices, cv, deployed: dict, extra: dict |
                       + (f", repeated {args.repeats}x" if args.repeats > 1 else "")),
         },
         "aggregation": f"session probability = mean of its {n_slices} slice probabilities, with hflip TTA",
+        "preprocessing": preprocessing_block(args),
         "cv": cv,
         "deployed": deployed,
         "training": {"optimizer": recipe, "class_weighted_loss": True,
@@ -681,6 +702,12 @@ def build_metrics(args, df, classes, n_slices, cv, deployed: dict, extra: dict |
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", required=True, help="dir containing manifest(_v2).csv and slices/")
+    ap.add_argument("--restrict-to", default=None, metavar="MANIFEST",
+                    help="keep only sessions that also appear in this manifest — makes e.g. the "
+                         "v3 baseline use exactly the sessions the registered v4 export has, so "
+                         "folds match and compare_experiments.py can pair them")
+    ap.add_argument("--manifest", default=None,
+                    help="manifest file inside --data-dir (e.g. manifest_coronal.csv of a registered export)")
     ap.add_argument("--out-dir", default=str(Path(__file__).resolve().parents[1] / "artifacts"))
     ap.add_argument("--experiment", default=None,
                     help="write to ml/experiments/<NAME>/ instead of --out-dir; never touches artifacts")
@@ -732,7 +759,10 @@ def main() -> None:
     ap.add_argument("--save-slice-preds", action="store_true",
                     help="experiment mode: also write per-slice OOF probabilities (preds_slices.csv)")
     ap.add_argument("--final-fit", action="store_true",
-                    help="experiment mode: after CV, retrain on ALL subjects and export final/model.onnx")
+                    help="experiment mode: after CV, retrain on ALL subjects and export final/")
+    ap.add_argument("--final-only", action="store_true",
+                    help="experiment mode: skip CV (reuse this experiment's existing summary.json) "
+                         "and only run the all-subjects final fit — same flags as the CV run")
     args = ap.parse_args()
     if args.lr is None:
         args.lr = ARCHS[args.arch]["lr"]
@@ -760,7 +790,13 @@ def main() -> None:
 
     classes = CLASS_NAMES[args.label_mode]
     n_classes = len(classes)
-    df = load_manifest(data_dir, args.label_mode)
+    df = load_manifest(data_dir, args.label_mode, args.manifest)
+    if args.restrict_to:
+        keep = set(pd.read_csv(Path(args.restrict_to).expanduser())["path"]
+                   .str.replace(r"^.*?slices/", "", regex=True).str.split("/").str[0])
+        before = df.session.nunique()
+        df = df[df.session.isin(keep)].reset_index(drop=True)
+        print(f"--restrict-to: {df.session.nunique()}/{before} sessions kept")
     n_slices = int(df.groupby("session").size().mode()[0])
     sess_labels = df.groupby("session")["label"].first()
     print(f"device={device}  label_mode={args.label_mode}  slices/session={n_slices}  mode={'experiment' if experiment_mode else 'legacy'}")
@@ -769,9 +805,20 @@ def main() -> None:
     if df["source"].nunique() > 1:
         print("sources:", df.groupby("source").session.nunique().to_dict())
 
+    if args.final_only:
+        if not experiment_mode or not (out_dir / "summary.json").exists():
+            raise SystemExit("--final-only needs --experiment NAME whose CV already ran (summary.json)")
+        prev = json.loads((out_dir / "summary.json").read_text())
+        args.final_fit = True
+        print(f"--final-only: reusing CV of {args.experiment} "
+              f"(pooled AUC {prev['cv'].get('pooled_oof', {}).get('auc', {}).get('mean')})")
+        cache = preload_cache(df, data_dir) if args.cache else None
+        final_fit(args, df, classes, n_slices, prev["cv"], out_dir, {}, data_dir, device, cache, n_classes)
+        return
+
     if experiment_mode:
         cfg = dict(vars(args))
-        cfg.update({"git_sha": git_sha(), "manifest_hash": manifest_hash(data_dir),
+        cfg.update({"git_sha": git_sha(), "manifest_hash": manifest_hash(data_dir, args.manifest),
                     "device": str(device), "argv": sys.argv[1:],
                     "started": time.strftime("%Y-%m-%dT%H:%M:%S")})
         (out_dir / "config.json").write_text(json.dumps(cfg, indent=2, default=str))
@@ -942,9 +989,12 @@ def write_experiment(args, df, classes, n_slices, cv, out_dir: Path, session_row
     print(f"experiment written: {out_dir} (summary.json, preds_sessions.csv"
           f"{', preds_slices.csv' if slice_rows else ''}, history.json)")
 
-    if not args.final_fit:
-        return
+    if args.final_fit:
+        final_fit(args, df, classes, n_slices, cv, out_dir, histories, data_dir, device, cache, n_classes)
 
+
+def final_fit(args, df, classes, n_slices, cv, out_dir: Path, histories, data_dir, device,
+              cache, n_classes) -> None:
     # ---- final fit on ALL subjects --------------------------------------
     # Same recipe and epoch budget as the CV runs, so the cv block above is an
     # honest estimate of this model. Requires a selection rule that does not
@@ -961,7 +1011,10 @@ def write_experiment(args, df, classes, n_slices, cv, out_dir: Path, session_row
                                    cache=cache, seed=SEED + 777 + 10_000 * s)
         histories[tag.strip("[] ")] = hist
         states.append(state)
-    (out_dir / "history.json").write_text(json.dumps(histories, indent=1))
+    if histories:
+        hist_path = out_dir / "history.json"
+        old = json.loads(hist_path.read_text()) if hist_path.exists() else {}
+        hist_path.write_text(json.dumps({**old, **histories}, indent=1))
 
     if len(states) > 1:
         # Weight soup: average the seeds' weights into one deployable network.
