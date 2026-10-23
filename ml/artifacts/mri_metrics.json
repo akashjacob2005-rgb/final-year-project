@@ -132,5 +132,33 @@
     "Out-of-distribution inputs (non-brain, CT, non-T1w) are not rejected.",
     "Reported separately from the behavioural risk score: no dataset pairs MRI with the app's six tests."
   ],
-  "version": "2.0.0"
+  "version": "2.0.0",
+  "calibration": {
+    "members": [
+      "resnet18"
+    ],
+    "temperature": 0.8263,
+    "threshold": 0.6119,
+    "objective": "balanced_accuracy",
+    "fitted_on": "all out-of-fold rows of sep27_resnet (180 session-predictions, 1 repeat(s))",
+    "cross_fitted_estimate": {
+      "accuracy": {
+        "mean": 0.75,
+        "std": 0.0
+      },
+      "balanced_accuracy": {
+        "mean": 0.7375,
+        "std": 0.0
+      },
+      "recall_normal": {
+        "mean": 0.7,
+        "std": 0.0
+      },
+      "recall_impaired": {
+        "mean": 0.775,
+        "std": 0.0
+      }
+    },
+    "note": "Applied at inference to the SESSION probability (mean of slice softmaxes, exactly what was fitted): p_cal = sigmoid(logit(p_impaired) / temperature); impaired if p_cal >= threshold. Ranking (AUC) is unchanged by calibration."
+  }
 }

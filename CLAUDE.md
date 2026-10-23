@@ -8,7 +8,7 @@ explainability). MRI is reported separately from the behavioural risk score
 by design — no dataset pairs the two.
 
 ## Stack & layout
-- `backend/` — FastAPI + SQLAlchemy (Supabase Postgres via DATABASE_URL; SQLite fallback), JWT cookies, Whisper (faster-whisper) + spaCy, onnxruntime.
+- `backend/` — FastAPI + SQLAlchemy (SQLite by default; set DATABASE_URL for Postgres — the old Supabase project is suspended, its creds removed from .env), JWT cookies, Whisper (faster-whisper) + spaCy, onnxruntime.
 - `frontend/` — Vite + React (JSX, **no TypeScript, no Tailwind**), one stylesheet `frontend/src/index.css` (token-driven; dark "Dimension" theme + light greige theme via `[data-theme="light"]`).
 - `ml/` — shared feature/scoring code, imported by the backend via `backend/app/ml/paths.py` sys.path bridge. `ml/mri/` = MRI training (own venv, torch/MPS), preprocessing shared with inference (`ml/mri/preprocess.py`).
 - Artifacts committed in `ml/artifacts/` (language_model.joblib, mri_model.onnx + .onnx.data + metrics JSONs).
