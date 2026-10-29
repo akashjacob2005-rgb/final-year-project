@@ -5,7 +5,6 @@ export default function Profile() {
   const { user, updateProfile } = useAuth()
   const [form, setForm] = useState({
     full_name: user?.full_name ?? '',
-    age: user?.age ?? '',
     education_years: user?.education_years ?? '',
   })
   const [status, setStatus] = useState({ type: '', message: '' })
@@ -22,7 +21,6 @@ export default function Profile() {
     try {
       await updateProfile({
         full_name: form.full_name,
-        age: Number(form.age),
         education_years:
           form.education_years === '' ? null : Number(form.education_years),
       })
@@ -66,10 +64,8 @@ export default function Profile() {
         <div className="grid grid-2" style={{ gap: 14 }}>
           <div className="field">
             <label className="label" htmlFor="age">Age</label>
-            <input
-              id="age" name="age" type="number" className="input"
-              min={18} max={120} value={form.age} onChange={change} required
-            />
+            <input id="age" className="input" value={user?.age ?? ''} disabled />
+            <span className="hint">Set when you signed up and cannot be changed.</span>
           </div>
           <div className="field">
             <label className="label" htmlFor="education_years">Years of education</label>
@@ -87,7 +83,7 @@ export default function Profile() {
       </form>
 
       <div className="disclaimer">
-        Changing these values affects how <em>future</em> assessments are scored.
+        Changing your education affects how <em>future</em> assessments are scored.
         Past results keep the age and education recorded at the time they were
         taken, so your history stays comparable.
       </div>

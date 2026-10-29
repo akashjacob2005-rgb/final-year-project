@@ -68,6 +68,8 @@ class UserOut(BaseModel):
 
 class UserUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=120)
+    # Accepted only so update_me can refuse a change explicitly (400) instead
+    # of silently dropping it: age is fixed at sign-up. See update_me.
     age: int | None = Field(default=None, ge=18, le=120)
     education_years: int | None = Field(default=None, ge=0, le=30)
 

@@ -341,7 +341,15 @@ def update_me(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    # Age is locked at sign-up: it selects the normative group every test is
+    # scored against, so letting a user edit it would let them re-score
+    # themselves as a different age group. Re-sending the same value is fine.
+    if "age" in changes and changes.pop("age") != user.age:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Age is set at sign-up and cannot be changed"
+        )
+    for field, value in changes.items():
         setattr(user, field, value)
     db.commit()
     db.refresh(user)

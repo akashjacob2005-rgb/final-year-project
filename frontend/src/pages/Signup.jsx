@@ -98,6 +98,7 @@ export default function Signup() {
                 id="age" name="age" type="number" className="input" required
                 min={18} max={120} value={form.age} onChange={change}
               />
+              <span className="hint">This cannot be changed later, so please check it.</span>
             </div>
             <div className="field">
               <label className="label" htmlFor="education_years">

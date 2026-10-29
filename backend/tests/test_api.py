@@ -83,6 +83,23 @@ def test_login_and_me(auth_client):
     assert r.json()["age"] == 68
 
 
+def test_age_is_locked_after_signup(auth_client):
+    # Age picks the normative group every test is scored against, so it is
+    # fixed at sign-up; other profile fields stay editable.
+    r = auth_client.patch("/api/auth/me", json={"age": 30})
+    assert r.status_code == 400, r.text
+    assert "cannot be changed" in r.json()["detail"]
+    assert auth_client.get("/api/auth/me").json()["age"] == 68
+
+    # Re-sending the unchanged age (older clients do) is harmless.
+    r = auth_client.patch("/api/auth/me", json={"age": 68, "education_years": 14})
+    assert r.status_code == 200, r.text
+    assert r.json()["education_years"] == 14 and r.json()["age"] == 68
+
+    r = auth_client.patch("/api/auth/me", json={"full_name": "Renamed Tester"})
+    assert r.status_code == 200 and r.json()["full_name"] == "Renamed Tester"
+
+
 def test_login_wrong_password_is_generic(auth_client):
     r = auth_client.post(
         "/api/auth/login", json={"email": USER["email"], "password": "wrongwrong1"}
