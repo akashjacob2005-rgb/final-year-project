@@ -200,3 +200,72 @@ def test_selection_one_per_subject_and_normal_cap():
     assert sum(labels[s["experiment_id"]]["label"] == "0" for s in capped) == 1
     assert {"1", "2"} <= kept  # every impaired person kept
     assert capped == select_sessions(sessions, labels, True, 1)  # deterministic
+
+
+def test_stream_pipeline_keeps_matrices_and_deletes_raw(tmp_path, monkeypatch):
+    """Download -> process -> delete: only fc.npy survives; excluded sessions are recorded."""
+    import csv
+    import io as _io
+    import sys
+    import zipfile as _zip
+
+    import numpy as np
+
+    from pathlib import Path
+
+    from graph import preprocess, stream_pipeline
+
+    proc = tmp_path / "processed"
+    proc.mkdir()
+    with open(proc / "graph_sessions.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["experiment_id", "subject_id", "bold_ids", "dwi_ids"])
+        w.writeheader()
+        w.writerow({"experiment_id": "OAS30001_MR_d0129", "subject_id": "OAS30001", "bold_ids": "5", "dwi_ids": ""})
+        w.writerow({"experiment_id": "OAS30009_MR_d0010", "subject_id": "OAS30009", "bold_ids": "5", "dwi_ids": ""})
+    with open(proc / "graph_session_labels.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["mr_session", "label", "cdr", "days_apart"])
+        w.writeheader()
+        w.writerow({"mr_session": "OAS30001_MR_d0129", "label": 0, "cdr": 0, "days_apart": 129})
+        w.writerow({"mr_session": "OAS30009_MR_d0010", "label": 1, "cdr": 0.5, "days_apart": 10})
+
+    class Fake:
+        def login(self):
+            pass
+
+        def download_scans(self, subject, exp, ids, out_root, keep):
+            buf = _io.BytesIO()
+            with _zip.ZipFile(buf, "w") as z:
+                z.writestr(f"{exp}/func/{exp}_task-rest_bold.nii.gz", b"x" * 1000)
+            with _zip.ZipFile(buf) as z:
+                z.extractall(out_root)
+
+    seen_raw = []
+
+    def fake_one(job):
+        sess, bold, out_dir, atlas, _ = job
+        seen_raw.append(Path(bold).exists())
+        if sess.startswith("OAS30009"):
+            return sess, None, 0.9, "excluded: mean FD 0.90 mm > 0.5"
+        d = out_dir / sess
+        d.mkdir(parents=True, exist_ok=True)
+        np.save(d / "fc.npy", np.eye(3, dtype=np.float32))
+        (d / "meta.txt").write_text("mean_fd=0.1\natlas=t\nregions=3\n")
+        return sess, 3, 0.1, None
+
+    monkeypatch.setattr(oasis_xnat, "OasisXnat", lambda *a, **k: Fake())
+    monkeypatch.setattr(preprocess, "_one", fake_one)
+    monkeypatch.setattr("graph.atlas.load_atlas", lambda name: (None, ["a", "b", "c"]))
+    monkeypatch.setattr(sys, "argv", ["stream_pipeline.py", "--data-root", str(tmp_path), "--workers", "0"])
+    stream_pipeline.main()
+
+    out = tmp_path / "processed_graph"
+    assert seen_raw == [True, True]                              # raw existed while processing
+    assert not (tmp_path / "_stream_scratch").exists()           # and is gone afterwards
+    assert (out / "OAS30001_MR_d0129" / "fc.npy").exists()
+    assert "OAS30009_MR_d0010" in (out / "excluded.txt").read_text()
+    rows = list(csv.DictReader(open(out / "manifest.csv")))
+    assert [r["session"] for r in rows] == ["OAS30001_MR_d0129"]
+
+    seen_raw.clear()
+    stream_pipeline.main()                                       # resumable: nothing redone
+    assert seen_raw == []

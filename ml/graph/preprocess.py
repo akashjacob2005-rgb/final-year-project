@@ -147,16 +147,8 @@ def main() -> None:
     out_dir.mkdir(exist_ok=True)
     sc_dir = Path(args.sc_dir).expanduser() if args.sc_dir else None
 
-    # Graph list from build_session_list.py (nearest CDR per rs-fMRI session)
-    # when present; otherwise the MRI pathway's session_labels.csv.
-    label_file = root / "processed" / "graph_session_labels.csv"
-    if not label_file.exists():
-        label_file = root / "processed" / "session_labels.csv"
-    labels: dict[str, int] = {}
-    with open(label_file) as f:
-        for row in csv.DictReader(f):
-            labels[row["mr_session"]] = int(row["label"])
-    print(f"labels from {label_file.name}: {len(labels)} sessions")
+    labels, label_name = load_labels(root)
+    print(f"labels from {label_name}: {len(labels)} sessions")
 
     jobs, no_label = [], 0
     for sess_dir in sorted(p for p in func_root.iterdir() if p.is_dir()):
@@ -188,8 +180,23 @@ def main() -> None:
                 print(f"[{n}/{len(jobs)}] {sess}: {regions} regions, mean FD {fd:.2f} mm "
                       f"({(time.time() - t0) / n:.0f}s/session)", flush=True)
 
+    write_manifest(out_dir, labels)
+    print(f"{len(problems)} problems this run")
+
+
+def load_labels(root: Path) -> tuple[dict[str, int], str]:
+    """graph_session_labels.csv (build_session_list.py) if present, else session_labels.csv."""
+    label_file = root / "processed" / "graph_session_labels.csv"
+    if not label_file.exists():
+        label_file = root / "processed" / "session_labels.csv"
+    with open(label_file) as f:
+        return {row["mr_session"]: int(row["label"]) for row in csv.DictReader(f)}, label_file.name
+
+
+def write_manifest(out_dir: Path, labels: dict[str, int]) -> list[dict]:
+    """manifest.csv over every processed session (this run or earlier ones)."""
     rows = []
-    for d in sorted(p for p in out_dir.iterdir() if (p / "fc.npy").exists()):
+    for d in sorted(p for p in out_dir.iterdir() if (p / "fc.npy").exists() and p.name in labels):
         meta = dict(line.split("=", 1) for line in (d / "meta.txt").read_text().split())
         rows.append({
             "session": d.name, "subject_id": d.name.split("_")[0], "label": labels[d.name],
@@ -204,7 +211,8 @@ def main() -> None:
     counts = {c: sum(r["label"] == c for r in rows) for c in (0, 1, 2)}
     print(f"\n{len(rows)} sessions in {out_dir / 'manifest.csv'} "
           f"(Normal {counts[0]}, MCI {counts[1]}, Dementia {counts[2]}; "
-          f"{sum(bool(r['sc']) for r in rows)} with SC); {len(problems)} problems this run")
+          f"{sum(bool(r['sc']) for r in rows)} with SC)")
+    return rows
 
 
 if __name__ == "__main__":

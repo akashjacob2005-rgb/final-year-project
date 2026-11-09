@@ -47,6 +47,9 @@ python ml/graph/download_oasis_func.py --data-root $D --dry-run  # how many, how
 python ml/graph/download_oasis_func.py --data-root $D --no-dwi --limit 3   # test
 python ml/graph/download_oasis_func.py --data-root $D --no-dwi             # full (re-run until exit 0)
 python ml/graph/preprocess.py --data-root $D [--sc-dir connectomes/]
+# LOW DISK? Replace the full download + preprocess with one streaming step:
+# downloads a session, makes its FC matrix, deletes the raw scan (<1 GB peak).
+python ml/graph/stream_pipeline.py --data-root $D --one-per-subject --max-normal 500
 python ml/graph/train_graph.py --data-dir $D/processed_graph
 ```
 
