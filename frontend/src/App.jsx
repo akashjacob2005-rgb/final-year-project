@@ -10,6 +10,7 @@ import History from './pages/History.jsx'
 import Login from './pages/Login.jsx'
 import ModelInfo from './pages/ModelInfo.jsx'
 import MriAnalysis from './pages/MriAnalysis.jsx'
+import GraphAnalysis from './pages/GraphAnalysis.jsx'
 import Profile from './pages/Profile.jsx'
 import ResetPassword from './pages/ResetPassword.jsx'
 import Results from './pages/Results.jsx'
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="/history" element={<History />} />
         <Route path="/model" element={<ModelInfo />} />
         <Route path="/mri" element={<MriAnalysis />} />
+        <Route path="/graph" element={<GraphAnalysis />} />
         <Route path="/profile" element={<Profile />} />
       </Route>
 

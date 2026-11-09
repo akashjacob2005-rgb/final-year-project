@@ -216,6 +216,8 @@ export default function ModelInfo() {
         </div>
       </div>
 
+      <GraphPathwayCard />
+
       <div className="disclaimer">
         Sensitivity is the proportion of true dementia cases the model flags;
         specificity is the proportion of healthy controls it correctly leaves
@@ -225,3 +227,48 @@ export default function ModelInfo() {
     </div>
   )
 }
+
+/** Connectivity (graph) pathway: real CV numbers, or a plain "not trained". */
+function GraphPathwayCard() {
+  const [g, setG] = useState(null)
+  useEffect(() => {
+    api.graphInfo().then(setG).catch(() => setG({ available: false, error: true }))
+  }, [])
+  if (!g) return null
+  const pct = (m) => (m?.mean == null ? '—' : `${Math.round(m.mean * 100)}%`)
+  const num = (m) => (m?.mean == null ? '—' : m.mean.toFixed(2))
+  return (
+    <div className="card">
+      <div className="card-title">Connectivity pathway (graph attention network)</div>
+      <div className="card-sub">
+        Resting-state fMRI (and DTI, when available) turned into a brain graph — atlas regions as
+        nodes, connection strength as edges — classified as Normal / MCI / Dementia by a graph
+        attention network. Reported separately from the score above; never fused into it.
+      </div>
+      {!g.available ? (
+        <p className="small muted" style={{ margin: 0 }}>
+          {g.enabled === false
+            ? 'Switched off on this deployment.'
+            : 'Not yet trained: no resting-state fMRI / DTI data has been processed, so there are no metrics to report. None are shown rather than placeholders.'}
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-3" style={{ gap: 12 }}>
+            <div><div className="stat-value">{pct(g.cv?.accuracy)}</div><div className="stat-label">accuracy ({g.cv?.folds}-fold CV)</div></div>
+            <div><div className="stat-value">{num(g.cv?.macro_f1)}</div><div className="stat-label">macro-F1</div></div>
+            <div><div className="stat-value">{num(g.cv?.auc)}</div><div className="stat-label">AUC (one-vs-rest)</div></div>
+          </div>
+          <p className="tiny muted mt-2">
+            Baseline, same folds (logistic regression on connectivity): accuracy {pct(g.baseline?.accuracy)},
+            macro-F1 {num(g.baseline?.macro_f1)}. {g.dataset?.sessions} sessions, {g.dataset?.subjects} subjects,
+            {' '}{g.dataset?.atlas}.
+          </p>
+          <ul className="small muted" style={{ paddingLeft: 18, margin: '8px 0 0', lineHeight: 1.9 }}>
+            {(g.caveats || []).map((c, i) => <li key={i}>{c}</li>)}
+          </ul>
+        </>
+      )}
+    </div>
+  )
+}
+

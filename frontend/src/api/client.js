@@ -119,4 +119,10 @@ export const api = {
     request('/mri/analyze', { method: 'POST', body: formData, isForm: true }),
   mriAnalyzeSample: (sampleCase) =>
     request(`/mri/analyze-sample?case=${sampleCase}`, { method: 'POST' }),
+
+  // graph (connectivity GAT)
+  graphInfo: () => request('/graph/info'),
+  graphAnalyze: (formData) =>
+    request('/graph/analyze', { method: 'POST', body: formData, isForm: true }),
+  graphResults: () => request('/graph/results'),
 }

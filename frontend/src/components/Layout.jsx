@@ -8,6 +8,7 @@ const NAV = [
   { to: '/assessment', label: 'New Assessment', icon: '⊕' },
   { to: '/history', label: 'Monitoring', icon: '◔' },
   { to: '/mri', label: 'MRI Analysis', icon: '◉' },
+  { to: '/graph', label: 'Connectivity', icon: '⟡' },
   { to: '/model', label: 'Model & Method', icon: '⚙' },
   { to: '/profile', label: 'Profile', icon: '◯' },
 ]
@@ -17,6 +18,7 @@ const TITLES = {
   '/assessment': ['Cognitive Assessment', 'Six tests, about ten minutes'],
   '/history': ['Longitudinal Monitoring', 'How your scores change over time'],
   '/mri': ['MRI Analysis', 'Structural pathway — a CNN trained on OASIS-3 brain scans'],
+  '/graph': ['Connectivity Analysis', 'Graph pathway — a graph attention network over brain networks'],
   '/model': ['Model & Method', 'How the score is produced, and how well it performs'],
   '/profile': ['Profile', 'Details used to age- and education-adjust your scores'],
 }
