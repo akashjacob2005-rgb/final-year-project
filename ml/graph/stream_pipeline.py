@@ -5,7 +5,9 @@ up as one N x N connectivity matrix of a few KB. This script never keeps the
 raw data: it downloads a session's BOLD into a scratch folder, runs the same
 preprocessing as ml/graph/preprocess.py (motion correction, MNI registration,
 atlas FC), saves processed_graph/<session>/fc.npy, and deletes the scratch
-folder. Peak disk use is about (workers + 1) sessions, i.e. under 1 GB.
+folder. Up to --downloads sessions download at once (NITRC is slow per
+connection) while --workers sessions are processed; peak disk use is about
+(downloads + workers) raw sessions, i.e. 1-2 GB.
 
     export OASIS_USER=... OASIS_PASS=...
     D=~/Downloads/7th_sem/PP-2/data
@@ -29,7 +31,7 @@ import os
 import shutil
 import sys
 import time
-from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, ThreadPoolExecutor, wait
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # ml/
@@ -62,6 +64,9 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=max(1, CORES // 2),
                     help="sessions processed in parallel (each holds one raw download on disk; "
                          "CPU cores are split between them); 0 = in this process (debugging)")
+    ap.add_argument("--downloads", type=int, default=3,
+                    help="sessions downloaded at the same time (NITRC is slow per connection; "
+                         "1 = one after another)")
     ap.add_argument("--all-runs", action="store_true", help="download every resting-state run")
     ap.add_argument("--one-per-subject", action="store_true")
     ap.add_argument("--max-normal", type=int, default=0)
@@ -130,43 +135,60 @@ def main() -> None:
         recent = finished[-11:]
         pace = (recent[-1] - recent[0]) / (len(recent) - 1) if len(recent) > 1 else recent[0] - t0
         eta_h = pace * (len(todo) - n) / 3600
+        per_hour = 3600 / pace if pace > 0 else 0
         print(f"[{n}/{len(todo)}] {sess}: " + (err or f"{regions} regions, mean FD {fd:.2f} mm")
-              + f"  [{stage_times(sess)}]  (eta {eta_h:.1f} h)", flush=True)
+              + f"  [{stage_times(sess)}]  ({per_hour:.0f}/h, eta {eta_h:.1f} h)", flush=True)
 
     stats, t0, finished, download_secs = {"done": 0, "problems": 0}, time.time(), [], {}
     threads = max(1, CORES // max(1, args.workers))
-    print(f"{args.workers} workers x {threads} threads ({CORES} cores)")
+    n_dl = max(1, args.downloads)
+    max_raw = n_dl + max(1, args.workers)  # raw sessions allowed on disk at once
+    print(f"{n_dl} parallel downloads, {args.workers} workers x {threads} threads ({CORES} cores); "
+          f"at most {max_raw} raw sessions on disk")
     pool = (ProcessPoolExecutor(max_workers=args.workers, initializer=_limit_threads, initargs=(threads,))
             if args.workers > 0 else None)
-    pending: dict[Future, str] = {}
+    dl_pool = ThreadPoolExecutor(max_workers=n_dl)
+    queue = list(todo)
+    downloads: dict[Future, str] = {}
+    processing: dict[Future, str] = {}
+    raw_on_disk = 0
     try:
-        for s in todo:
-            sess = s["experiment_id"]
-            try:
-                bold = fetch(s)
-            except AccessDenied as exc:
-                sys.exit(str(exc))
-            except Exception as exc:
-                print(f"download failed {sess}: {exc}")
-                stats["problems"] += 1
-                shutil.rmtree(scratch / sess, ignore_errors=True)
-                continue
-            if bold is None:
-                print(f"skip {sess}: no resting-state BOLD")
-                continue
-            job = (sess, bold, out_dir, args.atlas, None)
-            if pool is None:
-                finish(sess, _one(job))
-                continue
-            pending[pool.submit(_one, job)] = sess
-            # Hold at most `workers` raw downloads: wait before fetching more.
-            while len(pending) >= args.workers:
-                done, _ = wait(pending, return_when=FIRST_COMPLETED)
-                for f in done:
-                    finish(pending.pop(f), f.result())
-        for f in list(pending):
-            finish(pending.pop(f), f.result())
+        while queue or downloads or processing:
+            # Start downloads while there is room on disk and in the download pool.
+            while queue and len(downloads) < n_dl and raw_on_disk < max_raw:
+                s = queue.pop(0)
+                downloads[dl_pool.submit(fetch, s)] = s["experiment_id"]
+                raw_on_disk += 1
+            done, _ = wait(list(downloads) + list(processing), return_when=FIRST_COMPLETED)
+            for f in done:
+                if f in downloads:
+                    sess = downloads.pop(f)
+                    try:
+                        bold = f.result()
+                    except AccessDenied as exc:
+                        sys.exit(str(exc))
+                    except Exception as exc:
+                        print(f"download failed {sess}: {exc}")
+                        stats["problems"] += 1
+                        shutil.rmtree(scratch / sess, ignore_errors=True)
+                        raw_on_disk -= 1
+                        continue
+                    if bold is None:
+                        print(f"skip {sess}: no resting-state BOLD")
+                        shutil.rmtree(scratch / sess, ignore_errors=True)
+                        raw_on_disk -= 1
+                        continue
+                    job = (sess, bold, out_dir, args.atlas, None)
+                    if pool is None:
+                        finish(sess, _one(job))
+                        raw_on_disk -= 1
+                    else:
+                        processing[pool.submit(_one, job)] = sess
+                else:
+                    finish(processing.pop(f), f.result())
+                    raw_on_disk -= 1
     finally:
+        dl_pool.shutdown(wait=False, cancel_futures=True)
         if pool:
             pool.shutdown(cancel_futures=True)
         shutil.rmtree(scratch, ignore_errors=True)

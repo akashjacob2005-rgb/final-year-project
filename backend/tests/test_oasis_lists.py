@@ -297,3 +297,73 @@ def test_ants_to_nib_matches_file_roundtrip(tmp_path):
     converted = ants_to_nib(img)
     assert np.allclose(converted.affine, nib.load(tmp_path / "x.nii.gz").affine, atol=1e-4)
     assert np.allclose(converted.get_fdata(), data, atol=1e-5)
+
+
+def test_stream_parallel_downloads(tmp_path, monkeypatch):
+    """Up to --downloads sessions fetch at once; everything still ends deleted and listed."""
+    import csv
+    import io as _io
+    import sys
+    import threading
+    import time as _time
+    import zipfile as _zip
+
+    import numpy as np
+
+    from graph import preprocess, stream_pipeline
+
+    proc = tmp_path / "processed"
+    proc.mkdir()
+    names = [f"OAS3{i:04d}_MR_d0001" for i in range(6)]
+    with open(proc / "graph_sessions.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["experiment_id", "subject_id", "bold_ids", "dwi_ids"])
+        w.writeheader()
+        for n in names:
+            w.writerow({"experiment_id": n, "subject_id": n.split("_")[0], "bold_ids": "5 6", "dwi_ids": ""})
+    with open(proc / "graph_session_labels.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["mr_session", "label", "cdr", "days_apart"])
+        w.writeheader()
+        for i, n in enumerate(names):
+            w.writerow({"mr_session": n, "label": i % 3, "cdr": 0, "days_apart": 0})
+
+    state = {"active": 0, "peak": 0, "ids": []}
+    lock = threading.Lock()
+
+    class Fake:
+        def login(self):
+            pass
+
+        def download_scans(self, subject, exp, ids, out_root, keep):
+            with lock:
+                state["active"] += 1
+                state["peak"] = max(state["peak"], state["active"])
+                state["ids"].append(tuple(ids))
+            _time.sleep(0.2)
+            buf = _io.BytesIO()
+            with _zip.ZipFile(buf, "w") as z:
+                z.writestr(f"{exp}/func/{exp}_task-rest_run-01_bold.nii.gz", b"x")
+            with _zip.ZipFile(buf) as z:
+                z.extractall(out_root)
+            with lock:
+                state["active"] -= 1
+
+    def fake_one(job):
+        sess, bold, out_dir, atlas, _ = job
+        d = out_dir / sess
+        d.mkdir(parents=True, exist_ok=True)
+        np.save(d / "fc.npy", np.eye(3, dtype=np.float32))
+        (d / "meta.txt").write_text("mean_fd=0.1\natlas=t\nregions=3\nt_motion=1.0\n")
+        return sess, 3, 0.1, None
+
+    monkeypatch.setattr(oasis_xnat, "OasisXnat", lambda *a, **k: Fake())
+    monkeypatch.setattr(preprocess, "_one", fake_one)
+    monkeypatch.setattr("graph.atlas.load_atlas", lambda name: (None, ["a", "b", "c"]))
+    monkeypatch.setattr(sys, "argv", ["stream_pipeline.py", "--data-root", str(tmp_path),
+                                      "--workers", "0", "--downloads", "3"])
+    stream_pipeline.main()
+
+    assert state["peak"] == 3                                    # three at once, never more
+    assert all(ids == ("5",) for ids in state["ids"])           # first run only
+    assert not (tmp_path / "_stream_scratch").exists()
+    rows = list(csv.DictReader(open(tmp_path / "processed_graph" / "manifest.csv")))
+    assert sorted(r["session"] for r in rows) == names
