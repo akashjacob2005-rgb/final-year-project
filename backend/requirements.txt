@@ -42,3 +42,8 @@ pillow
 # NIfTI — uploads of a zipped DICOM series are converted server-side.
 dicom2nifti
 pydicom
+
+# --- graph pathway (inference only; training uses torch + torch_geometric in ml/graph) ---
+# The GAT forward pass is numpy (ml/graph/gat_numpy.py); nilearn does the atlas
+# extraction and signal cleaning. Off unless GRAPH_ENABLED=true.
+nilearn

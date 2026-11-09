@@ -1,3 +1,12 @@
 # Training-time extras. Install on top of backend/requirements.txt.
 matplotlib
 seaborn
+
+# Graph pathway training (ml/graph/train_graph.py). Inference does not need
+# these: the backend runs the exported weights in numpy.
+torch
+torch_geometric
+
+# Registration (ml/mri/preprocess_registered.py, ml/graph/preprocess.py)
+antspyx
+deepbet
