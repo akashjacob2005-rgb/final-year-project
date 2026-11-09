@@ -64,6 +64,16 @@ Worth being precise about, because it is the first thing an examiner should ask:
 | The five other tests | **Rule-scored.** MoCA rules plus normative z-scores. No model. |
 | Final combination | **Fixed weights.** No dataset exists of people taking *these six tests* with diagnostic labels, so there is nothing to fit against. The weighting is a documented judgement. |
 | Speech timing (pauses, rate) | **Descriptive only.** The training corpus is text with no audio, so these could not be validated. Displayed, but excluded from the score. |
+| MRI pathway | **Trained model** (OASIS-3 ResNet-18), reported separately, never in the score. See `docs/MODEL_CARD.md`. |
+| Connectivity (graph) pathway | **Built, not yet trained.** rs-fMRI (+ DTI) → brain graph → Graph Attention Network → Normal / MCI / Dementia. No resting-state fMRI or DTI data has been processed yet, so there are no weights and no metrics; the page says "not yet trained" and `/api/graph/analyze` returns 503. Reported separately, never in the score. |
+
+### Analysis pathways
+
+| Pathway | Input | Model | Output | In the risk score? |
+|---|---|---|---|---|
+| Behavioural | Six in-browser tests | Rules + trained language model | Score out of 10, band | — (it *is* the score) |
+| MRI | T1w MRI (.nii / DICOM zip) | ResNet-18 CNN (+ optional ensemble) | Normal vs impaired, heatmaps | No |
+| Connectivity | 4-D rs-fMRI in MNI space + DTI connectome (.csv/.npy) | Graph Attention Network (numpy inference) | P(Normal / MCI / Dementia), top attended region pairs | No (disabled hook in `ml/fusion.py`) |
 
 ---
 
@@ -134,7 +144,10 @@ React SPA (Vite)  ──JWT in httpOnly cookie──>  FastAPI
                                                   ├── features.py   27 linguistic features
                                                   ├── language_model.py  trained classifier
                                                   ├── scoring.py    MoCA rules + norms
-                                                  └── fusion.py     weighted combination
+                                                  ├── fusion.py     weighted combination
+                                                  ├── mri_model.py  ONNX CNN (separate pathway)
+                                                  └── graph_model.py connectivity GAT, numpy
+                                                         (separate pathway, GRAPH_ENABLED)
                                                   │
                                             SQLAlchemy 2.0
                                                   │
@@ -213,3 +226,8 @@ Set `COOKIE_SECURE=true` for any HTTPS deployment.
 4. **Trained on English picture description only.** No validity claim for other
    languages or tasks.
 5. **The fusion weights are a judgement, not a fitted parameter.**
+6. **The connectivity pathway has no trained model yet.** It needs OASIS-3
+   resting-state fMRI (and DTI) behind XNAT credentials. Once trained, its
+   limits are: CDR labels (0.5 is a proxy for MCI), a single cohort, results
+   tied to the atlas, a precomputed DTI matrix in v1, and uploads that must be
+   motion-corrected and in MNI space. A screening aid, not a diagnosis.

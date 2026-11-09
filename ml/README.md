@@ -19,6 +19,54 @@ imported twice is what stops training and serving from drifting apart.
 | `build_dataset.py` | Transcribe that audio via the backend's own Whisper path | training |
 | `train_audio_model.py` | Train on words **and** speech timing, grouped by participant | training |
 | `lexicon.py` / `build_proper_nouns.py` | Proper-noun list used by the feature extractor | training **and** inference |
+| `graph/download_oasis_func.py` | OASIS-3 rs-fMRI + DWI from XNAT (credentials required) | training |
+| `graph/preprocess.py` | Motion correction, MNI registration, FC per session (+ precomputed SC) | training |
+| `graph/connectivity.py` | Atlas time series, cleaning, Pearson FC. **Shared.** | training **and** inference |
+| `graph/graph_build.py` | Matrices → graph (nodes, edges, edge_attr, features). **Shared.** | training **and** inference |
+| `graph/gat.py` / `graph/train_graph.py` | PyG GAT, subject-grouped CV, baseline, export | training |
+| `graph/gat_numpy.py` | The deployed GAT forward pass + attention explanation | inference |
+
+## Graph pathway (connectivity GAT)
+
+**Status: built and tested, not trained.** There is no resting-state fMRI or
+DTI data in this project yet (OASIS-3 needs approved XNAT credentials), so
+`ml/artifacts/` holds no `graph_*` files and nothing reports metrics.
+
+```bash
+export OASIS_USER=... OASIS_PASS=...
+python ml/graph/download_oasis_func.py --data-root ~/Downloads/7th_sem/PP-2/data   # [--no-dwi]
+python ml/graph/preprocess.py --data-root ~/Downloads/7th_sem/PP-2/data [--sc-dir connectomes/]
+python ml/graph/train_graph.py --data-dir ~/Downloads/7th_sem/PP-2/data/processed_graph
+```
+
+Pipeline: rs-fMRI → ANTs motion correction (sessions with mean FD > 0.5 mm
+excluded) → affine to MNI152 → Harvard-Oxford cortical regions (configurable)
+with detrend, 0.01–0.1 Hz band-pass, z-scoring and WM/CSF confound regression
+→ Pearson FC (`ConnectivityMeasure`) → graph: top-k |FC| edges per node
+(or |r| > threshold), edge_attr `[FC, SC]`, node features = FC row + SC row +
+degree + strength → GATConv ×2–3 (4 heads, edge_dim 2) → mean + attention
+pooling → MLP → softmax over Normal / MCI / Dementia.
+
+Training: subject-grouped stratified 5-fold CV, early stopping on an inner
+split of the training subjects only, class-weighted loss, fixed seed, and a
+logistic-regression baseline on the FC upper triangle on the same folds. The
+script refuses to write artifacts below `--min-sessions` (30) or with a class
+missing. Labels: CDR 0 / 0.5 / ≥1 nearest the scan.
+
+DTI: tractography is not done in Python. v1 takes precomputed N×N matrices in
+the atlas's region order (`--sc-dir`); the MRtrix3 recipe is in
+`graph/preprocess.py`. Without them the model trains on FC only and
+`graph_config.json` records it.
+
+### Why inference is numpy
+
+The backend runs the exported weights (`graph_model.npz`) through
+`graph/gat_numpy.py` instead of loading torch: the free instance has 512 MB
+and already carries Whisper, torch + torch_geometric are several hundred MB,
+and the backend tests must run without them. The GAT forward pass for one
+~50-node graph is a handful of matrix products. `train_graph.py` checks numpy
+against torch (max |Δp| < 1e-4) before writing anything, and
+`backend/tests/test_graph.py` repeats the check when torch is installed.
 
 ## Training on real audio (optional, separate from the above)
 

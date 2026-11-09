@@ -439,3 +439,45 @@ python ml/mri/train_mri.py --data-dir ... --experiment e01_baseline_honest \
     --sched cosine --epochs 25 --repeats 3 --save-slice-preds
 # or run ml/mri/colab_train.ipynb on a free Colab T4
 ```
+
+## Connectivity pathway (added later): graph attention network
+
+**Status: not yet trained. No metrics exist, and none are reported.**
+The pipeline, model, backend and page are built and tested on generated
+fixtures; training needs OASIS-3 resting-state fMRI (and DTI) behind approved
+XNAT credentials, which this project does not have yet. Until
+`ml/graph/train_graph.py` has run on real data, `/api/graph/info` says "not
+trained" and `/api/graph/analyze` returns 503.
+
+- **Input.** A 4-D resting-state BOLD series, motion-corrected and in MNI152
+  space, plus (optionally) an N×N structural connectivity matrix from DTI
+  tractography in the same atlas.
+- **Graph.** Nodes = Harvard-Oxford cortical regions (configurable); edges =
+  each region's top-k strongest |functional connections| (or |r| above a
+  threshold), symmetric, with self-loops; edge attributes = [FC, SC]; node
+  features = the region's FC row, SC row, degree and strength.
+- **Model.** 2–3 GATConv layers (4 heads, edge_dim 2), mean + attention
+  pooling, MLP, softmax over **Normal (CDR 0) / MCI (CDR 0.5) / Dementia
+  (CDR ≥ 1)**. Served as a numpy forward pass (see ml/README.md).
+- **Planned evaluation.** Subject-grouped stratified 5-fold CV with inner-split
+  early stopping, class-weighted loss, compared against logistic regression on
+  the FC upper triangle on the same folds. `graph_metrics.json` will carry
+  per-fold accuracy, macro-F1, one-vs-rest AUC, per-class recall, confusion
+  matrices, dataset counts and caveats.
+- **Explanation.** The region pairs with the highest GAT attention, averaged
+  over heads and layers. Attention shows where the model looked, not which
+  connection is abnormal, and the UI says so.
+- **Separate from the risk score.** No dataset pairs connectivity data with the
+  six tests, so `ml/fusion.py` only has a disabled, labelled hook
+  (`GRAPH_FUSION_ENABLED = False`).
+- **Limitations (once trained).** CDR staging, not clinical diagnosis, and CDR
+  0.5 is only a proxy for MCI; a single cohort (OASIS-3), with other scanners
+  and protocols unvalidated; results depend on the atlas, and another atlas
+  means retraining; DTI enters as a precomputed matrix in v1; uploads must
+  already be motion-corrected and in MNI space, and a native-space series gives
+  a meaningless graph; small sample per class. A screening aid for research
+  and education, not a diagnosis.
+- **Storage.** Results (probabilities, top edges, model version, file name)
+  are stored per user in `graph_results`, readable only by their owner. The
+  uploaded scan is not kept. The table is created by `create_all` at startup,
+  like every other table here; the repo has no Alembic migrations.
