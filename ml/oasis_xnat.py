@@ -105,9 +105,22 @@ class OasisXnat:
             pass
         for exp in self._csv(f"/data/archive/projects/{PROJECT}/subjects/{subject}/experiments"):
             label = exp.get("label") or exp.get("ID")
-            for f in self._csv(f"/data/archive/projects/{PROJECT}/subjects/{subject}"
-                               f"/experiments/{label}/files"):
+            base = f"/data/archive/projects/{PROJECT}/subjects/{subject}/experiments/{label}"
+            for f in self._csv(f"{base}/files"):
                 out.append({"experiment": label, "name": f.get("Name", ""), "uri": f.get("URI", "")})
+            # OASIS-3 on NITRC-IR stores its spreadsheets as "scans" of the
+            # data-files sessions (e.g. SCANS/UDSb4/csv/OASIS3_UDSb4_cdr.csv).
+            try:
+                scans = self._csv(f"{base}/scans")
+            except AccessDenied:
+                raise
+            except Exception:
+                scans = []
+            for sc in scans:
+                sid = sc.get("ID")
+                for f in self._csv(f"{base}/scans/{sid}/files"):
+                    out.append({"experiment": f"{label}/SCANS/{sid}", "name": f.get("Name", ""),
+                                "uri": f.get("URI", "")})
         return out
 
     def download(self, uri: str) -> bytes:

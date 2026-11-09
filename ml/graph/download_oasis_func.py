@@ -52,6 +52,36 @@ def read_sessions(processed: Path) -> tuple[list[dict], str]:
     return rows, "download_list.csv (run build_session_list.py for the full graph list)"
 
 
+def select_sessions(sessions: list[dict], labels: dict[str, dict], one_per_subject: bool,
+                    max_normal: int, seed: int = 42) -> list[dict]:
+    """Thin the list before downloading.
+
+    one_per_subject: keep each person's session whose CDR was assessed closest
+      to the scan (extra sessions of the same person add disk, not people).
+    max_normal: keep at most this many Normal (CDR 0) people, chosen at random
+      with a fixed seed; every MCI and Dementia person is kept. OASIS-3 is
+      ~80% Normal, so this saves most of the download without losing any
+      impaired example.
+    """
+    import random
+
+    rows = [s for s in sessions if s["experiment_id"] in labels]
+    if one_per_subject:
+        best: dict[str, dict] = {}
+        for s in rows:
+            cur = best.get(s["subject_id"])
+            key = float(labels[s["experiment_id"]].get("days_apart") or 0)
+            if cur is None or key < float(labels[cur["experiment_id"]].get("days_apart") or 0):
+                best[s["subject_id"]] = s
+        rows = list(best.values())
+    if max_normal:
+        normal_subjects = sorted({s["subject_id"] for s in rows if labels[s["experiment_id"]]["label"] == "0"})
+        if len(normal_subjects) > max_normal:
+            keep = set(random.Random(seed).sample(normal_subjects, max_normal))
+            rows = [s for s in rows if labels[s["experiment_id"]]["label"] != "0" or s["subject_id"] in keep]
+    return sorted(rows, key=lambda s: s["experiment_id"])
+
+
 def main() -> None:
     from graph.build_session_list import is_dwi, is_rest_bold
     from oasis_xnat import AccessDenied, OasisXnat
@@ -61,12 +91,23 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=0, help="stop after N downloads (0 = all)")
     ap.add_argument("--no-dwi", action="store_true", help="resting-state BOLD only")
     ap.add_argument("--dry-run", action="store_true", help="list what would download, then stop")
+    ap.add_argument("--one-per-subject", action="store_true",
+                    help="one session per person (the one with the closest CDR)")
+    ap.add_argument("--max-normal", type=int, default=0,
+                    help="keep at most N Normal people (all MCI/Dementia kept); 0 = no cap")
     args = ap.parse_args()
 
     root = Path(args.data_root).expanduser()
     out_root = root / "oasis3_func"
     out_root.mkdir(exist_ok=True)
     sessions, source = read_sessions(root / "processed")
+    label_file = root / "processed" / "graph_session_labels.csv"
+    if (args.one_per_subject or args.max_normal) and label_file.exists():
+        labels = {r["mr_session"]: r for r in csv.DictReader(open(label_file))}
+        sessions = select_sessions(sessions, labels, args.one_per_subject, args.max_normal)
+        counts = {c: sum(labels[s["experiment_id"]]["label"] == c for s in sessions) for c in "012"}
+        print(f"selection: {len(sessions)} sessions — Normal {counts['0']} · MCI {counts['1']} · "
+              f"Dementia {counts['2']}")
 
     todo = [s for s in sessions
             if not has_bold(out_root / s["experiment_id"])

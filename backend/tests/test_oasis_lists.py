@@ -164,3 +164,39 @@ def test_no_cdr_table_lists_files_seen(capsys):
         bsl.find_clinical_rows(x)
     out = capsys.readouterr().out
     assert "OASIS3_data_files/OASIS3_MR_json.zip" in out and "readme.txt" in out
+
+
+class _ScanCdrXnat(FakeXnat):
+    """NITRC-IR layout: the CDR CSV is a file of a *scan* (SCANS/UDSb4/csv/...)."""
+
+    def get(self, url, timeout=120, stream=False):
+        path = url.split("/ir", 1)[1]
+        if path.endswith("/experiments/OASIS3_data_files/files?format=csv"):
+            return _Resp(text="Name,URI\n")
+        if path.endswith("/experiments/OASIS3_data_files/scans?format=csv"):
+            return _Resp(text="ID,type\nUDSb4,csv\n")
+        if path.endswith("/experiments/OASIS3_data_files/scans/UDSb4/files?format=csv"):
+            return _Resp(text="Name,URI\nOASIS3_UDSb4_cdr.csv,/data/files/cdr.csv\nUDSb4_catalog.xml,/data/x\n")
+        return super().get(url, timeout, stream)
+
+
+def test_cdr_table_found_under_scans():
+    x = oasis_xnat.OasisXnat("u", "p", base="https://www.nitrc.org/ir", session=_ScanCdrXnat())
+    assert "OAS30002" in bsl.parse_cdr_table(bsl.find_clinical_rows(x))
+
+
+def test_selection_one_per_subject_and_normal_cap():
+    from graph.download_oasis_func import select_sessions
+
+    sessions = [{"experiment_id": e, "subject_id": e.split("_")[0], "bold_ids": "1", "dwi_ids": ""}
+                for e in ("A_MR_d0001", "A_MR_d0500", "B_MR_d0001", "C_MR_d0001", "D_MR_d0001", "E_MR_d0001")]
+    labels = {"A_MR_d0001": {"label": "0", "days_apart": "200"}, "A_MR_d0500": {"label": "0", "days_apart": "3"},
+              "B_MR_d0001": {"label": "0", "days_apart": "0"}, "C_MR_d0001": {"label": "0", "days_apart": "0"},
+              "D_MR_d0001": {"label": "1", "days_apart": "0"}, "E_MR_d0001": {"label": "2", "days_apart": "0"}}
+    one = select_sessions(sessions, labels, one_per_subject=True, max_normal=0)
+    assert [s["experiment_id"] for s in one if s["subject_id"] == "A"] == ["A_MR_d0500"]  # closest CDR
+    capped = select_sessions(sessions, labels, one_per_subject=True, max_normal=1)
+    kept = {labels[s["experiment_id"]]["label"] for s in capped}
+    assert sum(labels[s["experiment_id"]]["label"] == "0" for s in capped) == 1
+    assert {"1", "2"} <= kept  # every impaired person kept
+    assert capped == select_sessions(sessions, labels, True, 1)  # deterministic
