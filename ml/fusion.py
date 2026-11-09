@@ -56,6 +56,27 @@ SEVERE_COMPOSITE_Z = -2.0
 # The trained classifier's high-confidence region.
 SEVERE_LANGUAGE_PROBABILITY = 0.85
 
+# --- Graph (connectivity GAT) hook: DISABLED -----------------------------
+# The connectivity pathway (backend/app/ml/graph_model.py) is reported on its
+# own page, never folded into this score. No dataset pairs rs-fMRI/DTI with
+# these six tests, so any weight given to it here would be invented. Enable
+# only after fitting GRAPH_FUSION_WEIGHT on data where the same people have
+# both; until then fuse() never reads a graph result.
+GRAPH_FUSION_ENABLED = False
+GRAPH_FUSION_WEIGHT = 0.0
+
+
+def graph_component(graph_probabilities: dict[str, float] | None) -> float | None:
+    """P(impaired) from a graph result (MCI + Dementia), for a future fusion.
+
+    Returns None while GRAPH_FUSION_ENABLED is False, so nothing can use it by
+    accident.
+    """
+    if not GRAPH_FUSION_ENABLED or not graph_probabilities:
+        return None
+    return graph_probabilities.get("MCI", 0.0) + graph_probabilities.get("Dementia", 0.0)
+
+
 DOMAIN_WEIGHTS = {
     "memory": 1.3,          # earliest and most sensitive domain in decline
     "executive": 1.0,

@@ -483,6 +483,7 @@ def test_ensemble_averages_member_probabilities(monkeypatch):
         "_sessions",
         {"resnet18": _FakeSession(0.9), "dinov2_s": _FakeSession(0.1)},
     )
+    monkeypatch.setattr(mri_model, "calibration", lambda members=None: None)
     result = mri_model.predict(synthetic_nifti_bytes())
     assert result["model_members"] == ["resnet18", "dinov2_s"]
     impaired = result["probabilities"][mri_model.class_names()[1]]
@@ -496,6 +497,9 @@ def test_ensemble_fail_soft_single_member(monkeypatch):
     # Only the ResNet loaded (e.g. transformer ONNX absent on the free tier):
     # prediction still works and reports a single member.
     monkeypatch.setattr(mri_model, "_sessions", {"resnet18": _FakeSession(0.7)})
+    # The deployed artifact may carry a calibration block; this test is about
+    # member loading, so compare the raw (uncalibrated) average.
+    monkeypatch.setattr(mri_model, "calibration", lambda members=None: None)
     result = mri_model.predict(synthetic_nifti_bytes())
     assert result["model_members"] == ["resnet18"]
     impaired = result["probabilities"][mri_model.class_names()[1]]

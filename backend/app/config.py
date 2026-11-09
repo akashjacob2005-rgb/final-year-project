@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     # sample" buttons; unset hides them (e.g. in production).
     mri_sample_dir: str | None = None
 
+    # Graph (connectivity GAT) pathway. Off by default; in production the
+    # GRAPH_ENABLED environment variable must be set explicitly — see
+    # app/ml/graph_model.py::enabled, which mirrors MRI's fail-closed rule.
+    graph_enabled: bool = False
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

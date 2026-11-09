@@ -53,6 +53,9 @@ class User(Base):
     reset_tokens: Mapped[list["PasswordResetToken"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    graph_results: Mapped[list["GraphResult"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class RefreshToken(Base):
@@ -174,3 +177,30 @@ class AudioRecording(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     test_result: Mapped[TestResult] = relationship(back_populates="recording")
+
+
+class GraphResult(Base):
+    """One connectivity-graph analysis (rs-fMRI [+ DTI] -> GAT).
+
+    Stored separately from AssessmentSession on purpose: no dataset pairs
+    connectivity with the six behavioural tests, so the result is never part of
+    the behavioural risk score (see ml/fusion.py, GRAPH_FUSION_ENABLED). Only
+    derived numbers are kept, never the uploaded scan.
+    """
+
+    __tablename__ = "graph_results"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+
+    fmri_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    used_sc: Mapped[bool] = mapped_column(Boolean, default=False)
+    probabilities: Mapped[dict] = mapped_column(JSON)
+    predicted_class: Mapped[str] = mapped_column(String(60))
+    top_edges: Mapped[list] = mapped_column(JSON)
+    model_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped[User] = relationship(back_populates="graph_results")
+
