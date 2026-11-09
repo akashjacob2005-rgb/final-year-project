@@ -163,6 +163,11 @@ def main() -> None:
     if args.limit:
         jobs = jobs[: args.limit]
     print(f"{len(jobs)} sessions to process ({no_label} without a CDR label skipped)")
+    from graph.atlas import load_atlas
+    import json
+    # Region order = graph node order; train_graph.py copies these names into
+    # graph_config.json so explanations can name the regions.
+    (out_dir / "regions.json").write_text(json.dumps(load_atlas(args.atlas)[1], indent=1))
 
     t0, problems = time.time(), []
     with ProcessPoolExecutor(max_workers=max(1, args.workers)) as pool:

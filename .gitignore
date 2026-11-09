@@ -54,3 +54,6 @@ ml/experiments/**/*.onnx
 ml/experiments/**/*.onnx.data
 ml/experiments/**/history.json
 ml/experiments/**/mri_metrics.promote.json
+
+# Graph pathway: the torch checkpoint is reproducible; the backend serves graph_model.npz
+ml/artifacts/graph_model.pt
