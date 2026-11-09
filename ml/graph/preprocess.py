@@ -1,5 +1,8 @@
 """OASIS-3 rs-fMRI (+ optional precomputed DTI connectomes) -> per-session FC/SC matrices.
 
+Labels: processed/graph_session_labels.csv (build_session_list.py) if present,
+else processed/session_labels.csv.
+
     python ml/graph/preprocess.py --data-root ~/Downloads/7th_sem/PP-2/data \
         [--sc-dir /path/to/connectomes] [--atlas harvard_oxford_cort_2mm] [--workers 4]
 
@@ -144,10 +147,16 @@ def main() -> None:
     out_dir.mkdir(exist_ok=True)
     sc_dir = Path(args.sc_dir).expanduser() if args.sc_dir else None
 
+    # Graph list from build_session_list.py (nearest CDR per rs-fMRI session)
+    # when present; otherwise the MRI pathway's session_labels.csv.
+    label_file = root / "processed" / "graph_session_labels.csv"
+    if not label_file.exists():
+        label_file = root / "processed" / "session_labels.csv"
     labels: dict[str, int] = {}
-    with open(root / "processed" / "session_labels.csv") as f:
+    with open(label_file) as f:
         for row in csv.DictReader(f):
             labels[row["mr_session"]] = int(row["label"])
+    print(f"labels from {label_file.name}: {len(labels)} sessions")
 
     jobs, no_label = [], 0
     for sess_dir in sorted(p for p in func_root.iterdir() if p.is_dir()):

@@ -1,11 +1,11 @@
 """Download the missing OASIS-3 T1w sessions listed in download_list.csv.
 
-OASIS-3 lives on XNAT Central and requires approved credentials
-(https://sites.wustl.edu/oasisbrains/ -> apply for access). Pass them via
-environment variables — they are never written to disk:
+OASIS-3 is served from NITRC-IR (XNAT) and needs a NITRC account granted the
+OASIS3 project (https://sites.wustl.edu/oasisbrains/ -> apply for access).
+Credentials are read from the environment and never written to disk:
 
-    export OASIS_USER=your_username
-    export OASIS_PASS=your_password
+    export OASIS_USER=your_nitrc_login
+    export OASIS_PASS=your_nitrc_password
     python ml/mri/download_oasis.py --data-root /path/to/data [--limit 20]
 
 For every experiment in processed/download_list.csv that has no T1w volume
@@ -23,14 +23,10 @@ from __future__ import annotations
 import argparse
 import csv
 import glob
-import io
-import os
 import sys
-import zipfile
 from pathlib import Path
 
-BASE = "https://central.xnat.org"
-PROJECT = "OASIS3"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # ml/ for oasis_xnat
 
 
 def has_t1w(session_dir: Path) -> bool:
@@ -43,11 +39,7 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=0, help="stop after N downloads (0 = all)")
     args = ap.parse_args()
 
-    import requests
-
-    user, password = os.getenv("OASIS_USER"), os.getenv("OASIS_PASS")
-    if not user or not password:
-        sys.exit("Set OASIS_USER and OASIS_PASS environment variables first.")
+    from oasis_xnat import AccessDenied, OasisXnat
 
     root = Path(args.data_root)
     nii_root = root / "oasis3_nii"
@@ -61,45 +53,24 @@ def main() -> None:
                 todo.append((exp, row["subject_id"]))
     print(f"{len(todo)} sessions still to download")
 
-    s = requests.Session()
-    s.auth = (user, password)
-    # A cookie-backed session avoids re-authenticating on every request.
-    r = s.post(f"{BASE}/data/JSESSION", timeout=30)
-    if r.status_code != 200:
-        sys.exit(f"XNAT login failed (HTTP {r.status_code}) — check the credentials.")
+    x = OasisXnat()
+    x.login()
 
     done = failed = 0
     for exp, subject in todo:
         if args.limit and done >= args.limit:
             break
         try:
-            scans_url = (
-                f"{BASE}/data/archive/projects/{PROJECT}/subjects/{subject}"
-                f"/experiments/{exp}/scans?format=csv"
-            )
-            rows = list(csv.DictReader(io.StringIO(s.get(scans_url, timeout=60).text)))
-            t1w_ids = [r["ID"] for r in rows if "T1w" in (r.get("type") or "")]
+            t1w_ids = [r["ID"] for r in x.scans(subject, exp) if "T1w" in (r.get("type") or "")]
             if not t1w_ids:
                 print(f"SKIP {exp}: no T1w scans listed")
                 failed += 1
                 continue
-
-            files_url = (
-                f"{BASE}/data/archive/projects/{PROJECT}/subjects/{subject}"
-                f"/experiments/{exp}/scans/{','.join(t1w_ids)}/files?format=zip"
-            )
-            resp = s.get(files_url, timeout=600)
-            resp.raise_for_status()
-            with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
-                members = [m for m in z.namelist() if m.endswith(".nii.gz") or m.endswith("T1w.json")]
-                for m in members:
-                    # zip paths already start with the experiment label
-                    target = nii_root / m
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    with z.open(m) as src, open(target, "wb") as dst:
-                        dst.write(src.read())
+            x.download_scans(subject, exp, t1w_ids, nii_root, (".nii.gz", "T1w.json"))
             done += 1
             print(f"OK   {exp} ({done}/{len(todo)})")
+        except AccessDenied as exc:
+            sys.exit(str(exc))
         except Exception as exc:
             failed += 1
             print(f"FAIL {exp}: {exc}")

@@ -19,7 +19,9 @@ imported twice is what stops training and serving from drifting apart.
 | `build_dataset.py` | Transcribe that audio via the backend's own Whisper path | training |
 | `train_audio_model.py` | Train on words **and** speech timing, grouped by participant | training |
 | `lexicon.py` / `build_proper_nouns.py` | Proper-noun list used by the feature extractor | training **and** inference |
-| `graph/download_oasis_func.py` | OASIS-3 rs-fMRI + DWI from XNAT (credentials required) | training |
+| `oasis_xnat.py` | NITRC-IR (XNAT) client for OASIS-3: login, listings, downloads | training |
+| `graph/build_session_list.py` | Every OASIS-3 rs-fMRI session + nearest CDR label | training |
+| `graph/download_oasis_func.py` | OASIS-3 rs-fMRI + DWI from NITRC-IR (credentials required) | training |
 | `graph/preprocess.py` | Motion correction, MNI registration, FC per session (+ precomputed SC) | training |
 | `graph/connectivity.py` | Atlas time series, cleaning, Pearson FC. **Shared.** | training **and** inference |
 | `graph/graph_build.py` | Matrices → graph (nodes, edges, edge_attr, features). **Shared.** | training **and** inference |
@@ -32,12 +34,27 @@ imported twice is what stops training and serving from drifting apart.
 DTI data in this project yet (OASIS-3 needs approved XNAT credentials), so
 `ml/artifacts/` holds no `graph_*` files and nothing reports metrics.
 
+OASIS-3 is served from **NITRC-IR** (https://www.nitrc.org/ir), not the
+retired XNAT Central; `ml/oasis_xnat.py` is the shared client. Your NITRC
+account must have the OASIS3 project (check: log in to NITRC-IR and open
+project OASIS3 — you should see its subjects).
+
 ```bash
-export OASIS_USER=... OASIS_PASS=...
-python ml/graph/download_oasis_func.py --data-root ~/Downloads/7th_sem/PP-2/data   # [--no-dwi]
-python ml/graph/preprocess.py --data-root ~/Downloads/7th_sem/PP-2/data [--sc-dir connectomes/]
-python ml/graph/train_graph.py --data-dir ~/Downloads/7th_sem/PP-2/data/processed_graph
+export OASIS_USER=your_nitrc_login OASIS_PASS=your_nitrc_password   # in Terminal only
+D=~/Downloads/7th_sem/PP-2/data
+python ml/graph/build_session_list.py  --data-root $D            # rs-fMRI sessions + nearest CDR
+python ml/graph/download_oasis_func.py --data-root $D --dry-run  # how many, how many GB
+python ml/graph/download_oasis_func.py --data-root $D --no-dwi --limit 3   # test
+python ml/graph/download_oasis_func.py --data-root $D --no-dwi             # full (re-run until exit 0)
+python ml/graph/preprocess.py --data-root $D [--sc-dir connectomes/]
+python ml/graph/train_graph.py --data-dir $D/processed_graph
 ```
+
+`build_session_list.py` caches scan listings in
+`processed/oasis3_scan_index.json`; if it cannot find the CDR table on the
+`0AS_data_files` subject, download the OASIS-3 clinical CDR CSV from the OASIS
+site and pass `--clinical-csv`. The same NITRC login also unlocks the full
+518-subject T1 download for the MRI model (`ml/mri/download_oasis.py`).
 
 Pipeline: rs-fMRI → ANTs motion correction (sessions with mean FD > 0.5 mm
 excluded) → affine to MNI152 → Harvard-Oxford cortical regions (configurable)
