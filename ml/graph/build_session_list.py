@@ -99,24 +99,58 @@ def nearest_label(session: str, subject: str, table: dict, max_days: int):
     return cdr_to_label(cdr), cdr, abs(d - days)
 
 
+def _name_score(name: str) -> int:
+    name = name.lower()
+    return 3 if "cdr" in name else 2 if "b4" in name else 1 if "clinical" in name else 0
+
+
+def _csvs_in(name: str, data: bytes) -> list[tuple[str, bytes]]:
+    """(member name, bytes) for every CSV in a .csv / .zip / .tar(.gz) resource."""
+    import tarfile
+    import zipfile
+
+    low = name.lower()
+    if low.endswith(".csv"):
+        return [(name, data)]
+    out = []
+    if low.endswith(".zip"):
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            out = [(m, z.read(m)) for m in z.namelist() if m.lower().endswith(".csv")]
+    elif low.endswith((".tar", ".tar.gz", ".tgz")):
+        with tarfile.open(fileobj=io.BytesIO(data)) as t:
+            out = [(m.name, t.extractfile(m).read()) for m in t.getmembers()
+                   if m.isfile() and m.name.lower().endswith(".csv")]
+    return out
+
+
+def _cdr_rows(data: bytes) -> list[dict] | None:
+    rows = list(csv.DictReader(io.StringIO(data.decode("utf-8-sig", errors="replace"))))
+    return rows if rows and any(c in rows[0] for c in CDR_COLS) else None
+
+
 def find_clinical_rows(x) -> list[dict]:
+    """Find OASIS-3's CDR table among 0AS_data_files' resources (CSV, or inside
+    a zip/tar archive). Prints what it saw when nothing matches."""
     files = x.subject_resources(DATA_FILES_SUBJECT)
-    scored = []
-    for f in files:
-        name = f["name"].lower()
-        if not name.endswith(".csv"):
-            continue
-        score = 3 if "cdr" in name else 2 if "b4" in name else 1 if "clinical" in name else 0
-        if score:
-            scored.append((score, f))
-    for _, f in sorted(scored, key=lambda t: -t[0]):
-        rows = list(csv.DictReader(io.StringIO(x.download(f["uri"]).decode("utf-8-sig"))))
-        if rows and any(c in rows[0] for c in CDR_COLS):
-            print(f"clinical CDR table: {f['experiment']}/{f['name']} ({len(rows)} rows)")
-            return rows
+    loose = sorted((f for f in files if f["name"].lower().endswith(".csv") and _name_score(f["name"])),
+                   key=lambda f: -_name_score(f["name"]))
+    archives = [f for f in files if f["name"].lower().endswith((".zip", ".tar", ".tar.gz", ".tgz"))]
+    for f in loose + archives:
+        members = _csvs_in(f["name"], x.download(f["uri"]))
+        for member, data in sorted(members, key=lambda m: -_name_score(m[0])):
+            rows = _cdr_rows(data)
+            if rows:
+                print(f"clinical CDR table: {f['experiment']}/{f['name']}"
+                      + (f" -> {member}" if member != f["name"] else "") + f" ({len(rows)} rows)")
+                return rows
+    print(f"Files seen on {DATA_FILES_SUBJECT} ({len(files)}):")
+    for f in files[:30]:
+        print(f"   {f['experiment']}/{f['name']}")
+    if len(files) > 30:
+        print(f"   ... and {len(files) - 30} more")
     raise SystemExit(
-        f"Could not find a CDR table among {DATA_FILES_SUBJECT}'s files. Download the OASIS-3 "
-        "clinical CDR CSV from the OASIS site and pass --clinical-csv path/to/file.csv"
+        f"Could not find a CDR table among {DATA_FILES_SUBJECT}'s files (list above). Download the "
+        "OASIS-3 clinical CDR CSV (UDS b4 / ADRC clinical data) and pass --clinical-csv path/to/file.csv"
     )
 
 

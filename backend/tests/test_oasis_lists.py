@@ -114,3 +114,53 @@ def test_build_session_list_end_to_end(tmp_path, monkeypatch, capsys):
     assert sessions[0]["bold_ids"] == "5" and sessions[0]["dwi_ids"] == "6"
     assert labels[0]["label"] == "0"
     assert "Normal 1" in capsys.readouterr().out
+
+
+class _ZipCdrXnat(FakeXnat):
+    """CDR CSV only available inside a zip on the subject itself."""
+
+    def get(self, url, timeout=120, stream=False):
+        import io as _io
+        import zipfile as _zip
+
+        path = url.split("/ir", 1)[1]
+        if path.endswith("/subjects/0AS_data_files/files?format=csv"):
+            return _Resp(text="Name,URI\nOASIS3_clinical.zip,/data/files/clin.zip\n")
+        if path.endswith("/experiments/OASIS3_data_files/files?format=csv"):
+            return _Resp(text="Name,URI\nreadme.txt,/data/files/r\n")
+        if path == "/data/files/clin.zip":
+            buf = _io.BytesIO()
+            with _zip.ZipFile(buf, "w") as z:
+                z.writestr("csv/OASIS3_UDSb4_cdr.csv", "OASISID,days_to_visit,CDRTOT\nOAS30001,0,1\n")
+                z.writestr("csv/demographics.csv", "OASISID,AgeatEntry\nOAS30001,70\n")
+            return _Resp(content=buf.getvalue())
+        return super().get(url, timeout, stream)
+
+
+class _NoCdrXnat(FakeXnat):
+    def get(self, url, timeout=120, stream=False):
+        if url.endswith("/experiments/OASIS3_data_files/files?format=csv"):
+            return _Resp(text="Name,URI\nOASIS3_MR_json.zip,/data/files/x\nreadme.txt,/data/files/r\n")
+        if url.endswith("/data/files/x"):
+            import io as _io
+            import zipfile as _zip
+
+            buf = _io.BytesIO()
+            with _zip.ZipFile(buf, "w") as z:
+                z.writestr("a.json", "{}")
+            return _Resp(content=buf.getvalue())
+        return super().get(url, timeout, stream)
+
+
+def test_cdr_table_found_inside_zip():
+    x = oasis_xnat.OasisXnat("u", "p", base="https://www.nitrc.org/ir", session=_ZipCdrXnat())
+    rows = bsl.find_clinical_rows(x)
+    assert bsl.parse_cdr_table(rows) == {"OAS30001": [(0, 1.0)]}
+
+
+def test_no_cdr_table_lists_files_seen(capsys):
+    x = oasis_xnat.OasisXnat("u", "p", base="https://www.nitrc.org/ir", session=_NoCdrXnat())
+    with pytest.raises(SystemExit, match="--clinical-csv"):
+        bsl.find_clinical_rows(x)
+    out = capsys.readouterr().out
+    assert "OASIS3_data_files/OASIS3_MR_json.zip" in out and "readme.txt" in out

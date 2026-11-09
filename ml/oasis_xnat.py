@@ -96,6 +96,13 @@ class OasisXnat:
     def subject_resources(self, subject: str) -> list[dict]:
         """Files attached to a subject (OASIS keeps project-wide CSVs on 0AS_data_files)."""
         out = []
+        try:  # subject-level resources
+            for f in self._csv(f"/data/archive/projects/{PROJECT}/subjects/{subject}/files"):
+                out.append({"experiment": subject, "name": f.get("Name", ""), "uri": f.get("URI", "")})
+        except AccessDenied:
+            raise
+        except Exception:
+            pass
         for exp in self._csv(f"/data/archive/projects/{PROJECT}/subjects/{subject}/experiments"):
             label = exp.get("label") or exp.get("ID")
             for f in self._csv(f"/data/archive/projects/{PROJECT}/subjects/{subject}"
