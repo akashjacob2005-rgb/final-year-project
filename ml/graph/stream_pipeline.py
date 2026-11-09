@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import shutil
 import sys
 import time
@@ -32,6 +33,21 @@ from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wai
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # ml/
+
+CORES = os.cpu_count() or 2
+
+
+def _limit_threads(n: int) -> None:
+    """Worker initializer: ANTs/ITK otherwise uses every core in every worker,
+    and N workers x all cores thrash instead of running in parallel."""
+    os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = str(n)
+    os.environ["OMP_NUM_THREADS"] = str(n)
+
+
+def first_run_only(ids: list[str], all_runs: bool) -> list[str]:
+    """One resting-state run per session is enough for an FC matrix and halves
+    the download; --all-runs keeps every run (only the first is processed)."""
+    return ids if all_runs else ids[:1]
 
 
 def main() -> None:
@@ -43,9 +59,10 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-root", required=True)
     ap.add_argument("--atlas", default=DEFAULT_ATLAS)
-    ap.add_argument("--workers", type=int, default=2,
-                    help="sessions processed in parallel (each holds one raw download on disk); "
-                         "0 = process in this process (debugging)")
+    ap.add_argument("--workers", type=int, default=max(1, CORES // 2),
+                    help="sessions processed in parallel (each holds one raw download on disk; "
+                         "CPU cores are split between them); 0 = in this process (debugging)")
+    ap.add_argument("--all-runs", action="store_true", help="download every resting-state run")
     ap.add_argument("--one-per-subject", action="store_true")
     ap.add_argument("--max-normal", type=int, default=0)
     ap.add_argument("--limit", type=int, default=0, help="stop after N new sessions")
@@ -87,23 +104,40 @@ def main() -> None:
             r["ID"] for r in x.scans(subject, exp) if is_rest_bold(r.get("type"))]
         if not ids:
             return None
-        x.download_scans(subject, exp, ids, scratch, (".nii.gz", ".json"))
+        t0 = time.time()
+        x.download_scans(subject, exp, first_run_only(ids, args.all_runs), scratch, (".nii.gz", ".json"))
+        download_secs[exp] = time.time() - t0
         return find_bold(scratch / exp)
 
+    def stage_times(sess: str) -> str:
+        meta = out_dir / sess / "meta.txt"
+        parts = [f"download {download_secs.get(sess, 0):.0f}s"]
+        if meta.exists():
+            kv = dict(line.split("=", 1) for line in meta.read_text().split())
+            parts += [f"{k[2:]} {float(v):.0f}s" for k, v in kv.items() if k.startswith("t_")]
+        return ", ".join(parts)
+
     def finish(sess: str, result) -> None:
-        _, regions, fd, err = result
+        _, regions, fd, err = result[:4]
         shutil.rmtree(scratch / sess, ignore_errors=True)  # the whole point: never keep raw data
         if err and err.startswith("excluded"):
             with open(excluded_file, "a") as f:
                 f.write(sess + "\n")
         stats["done" if not err else "problems"] += 1
+        finished.append(time.time())
         n = stats["done"] + stats["problems"]
-        eta = (time.time() - t0) / n * (len(todo) - n) / 60
+        # ETA from the recent pace (the first session also pays start-up costs)
+        recent = finished[-11:]
+        pace = (recent[-1] - recent[0]) / (len(recent) - 1) if len(recent) > 1 else recent[0] - t0
+        eta_h = pace * (len(todo) - n) / 3600
         print(f"[{n}/{len(todo)}] {sess}: " + (err or f"{regions} regions, mean FD {fd:.2f} mm")
-              + f"  (eta {eta:.0f} min)", flush=True)
+              + f"  [{stage_times(sess)}]  (eta {eta_h:.1f} h)", flush=True)
 
-    stats, t0 = {"done": 0, "problems": 0}, time.time()
-    pool = ProcessPoolExecutor(max_workers=args.workers) if args.workers > 0 else None
+    stats, t0, finished, download_secs = {"done": 0, "problems": 0}, time.time(), [], {}
+    threads = max(1, CORES // max(1, args.workers))
+    print(f"{args.workers} workers x {threads} threads ({CORES} cores)")
+    pool = (ProcessPoolExecutor(max_workers=args.workers, initializer=_limit_threads, initargs=(threads,))
+            if args.workers > 0 else None)
     pending: dict[Future, str] = {}
     try:
         for s in todo:

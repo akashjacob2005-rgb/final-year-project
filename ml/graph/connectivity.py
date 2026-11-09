@@ -109,7 +109,14 @@ def region_timeseries(img, labels_img, confounds: np.ndarray | None = None,
         low_pass=LOW_PASS, high_pass=HIGH_PASS, t_r=repetition_time(img),
         keep_masked_labels=True,
     )
-    ts = masker.fit_transform(img, confounds=conf if conf is not None and conf.size else None)
+    import warnings
+
+    with warnings.catch_warnings():
+        # keep_masked_labels=True keeps one column per atlas region even when a
+        # region is outside the field of view (node i must always mean region
+        # i); nilearn warns that the option will change in 0.15.
+        warnings.simplefilter("ignore", FutureWarning)
+        ts = masker.fit_transform(img, confounds=conf if conf is not None and conf.size else None)
     return np.nan_to_num(np.asarray(ts, dtype=np.float64))
 
 

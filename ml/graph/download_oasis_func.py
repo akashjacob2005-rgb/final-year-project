@@ -91,6 +91,8 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=0, help="stop after N downloads (0 = all)")
     ap.add_argument("--no-dwi", action="store_true", help="resting-state BOLD only")
     ap.add_argument("--dry-run", action="store_true", help="list what would download, then stop")
+    ap.add_argument("--all-runs", action="store_true",
+                    help="download every resting-state run (default: the first, which is all FC needs)")
     ap.add_argument("--one-per-subject", action="store_true",
                     help="one session per person (the one with the closest CDR)")
     ap.add_argument("--max-normal", type=int, default=0,
@@ -136,6 +138,8 @@ def main() -> None:
                 dwi = [r["ID"] for r in scans if is_dwi(r.get("type"))]
             else:
                 bold, dwi = s["bold_ids"].split(), (s.get("dwi_ids") or "").split()
+            if not args.all_runs:
+                bold = bold[:1]
             ids = bold + ([] if args.no_dwi else dwi)
             if not bold:
                 print(f"SKIP {exp}: no resting-state BOLD in this session")

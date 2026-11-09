@@ -49,7 +49,6 @@ import argparse
 import csv
 import glob
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -79,28 +78,44 @@ def load_sc(sc_dir: Path | None, session: str, n: int) -> np.ndarray | None:
     return None
 
 
-def mni_bold(bold_path: Path):
+def ants_to_nib(img):
+    """In-memory ANTs -> nibabel (a NIfTI write/read of a 4-D series costs ~30 s)."""
+    import nibabel as nib
+
+    d = img.dimension
+    aff = np.eye(4)
+    aff[:3, :3] = np.array(img.direction).reshape(d, d)[:3, :3] * np.array(img.spacing[:3])
+    aff[:3, 3] = np.array(img.origin[:3])
+    aff = np.diag([-1, -1, 1, 1]) @ aff  # ITK physical space is LPS, NIfTI is RAS
+    return nib.Nifti1Image(img.numpy().astype(np.float32), aff)
+
+
+def mni_bold(bold_path: Path, timings: dict | None = None):
     """Motion-correct and register a BOLD series to MNI. Returns (nibabel img, mean FD)."""
     import ants
     import nibabel as nib
     from mri.preprocess_registered import template
 
+    t = timings if timings is not None else {}
     tpl, _ = template()
     tpl2 = ants.resample_image(tpl, (GRID_MM, GRID_MM, GRID_MM), use_voxels=False, interp_type=0)
     bold = ants.image_read(str(bold_path))
     tr = float(nib.load(str(bold_path)).header.get_zooms()[3])
 
-    mc = ants.motion_correction(bold, type_of_transform="Rigid")
+    t0 = time.time()
+    # BOLDRigid is ANTs' mode for fMRI realignment; plain "Rigid" gave
+    # implausible FD on a series with known sub-voxel shifts.
+    mc = ants.motion_correction(bold, type_of_transform="BOLDRigid")
     fd = np.asarray(mc.get("FD", [0.0]), dtype=float)
+    t["motion"] = time.time() - t0
+
+    t0 = time.time()
     mean_bold = ants.get_average_of_timeseries(mc["motion_corrected"])
     reg = ants.registration(fixed=tpl2, moving=mean_bold, type_of_transform="Affine")
     warped = ants.apply_transforms(fixed=tpl2, moving=mc["motion_corrected"],
                                    transformlist=reg["fwdtransforms"], imagetype=3)
-    with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp) / "bold_mni.nii.gz"
-        ants.image_write(warped, str(out))
-        img = nib.load(str(out))
-        img = nib.Nifti1Image(np.asanyarray(img.dataobj, dtype=np.float32), img.affine)
+    img = ants_to_nib(warped)
+    t["register"] = time.time() - t0
     img.header.set_zooms(img.header.get_zooms()[:3] + (tr,))
     return img, float(fd.mean())
 
@@ -112,17 +127,21 @@ def _one(job):
 
     try:
         labels_img, names = load_atlas(atlas_name)
-        img, mean_fd = mni_bold(bold_path)
+        timings: dict = {}
+        img, mean_fd = mni_bold(bold_path, timings)
         if mean_fd > MAX_MEAN_FD_MM:
             return session, None, mean_fd, f"excluded: mean FD {mean_fd:.2f} mm > {MAX_MEAN_FD_MM}"
+        t0 = time.time()
         fc = fc_from_bold(img, labels_img)
+        timings["fc"] = time.time() - t0
         sc = load_sc(sc_dir, session, fc.shape[0])
         d = out_dir / session
         d.mkdir(parents=True, exist_ok=True)
         np.save(d / "fc.npy", fc.astype(np.float32))
         if sc is not None:
             np.save(d / "sc.npy", sc.astype(np.float32))
-        (d / "meta.txt").write_text(f"mean_fd={mean_fd:.4f}\natlas={atlas_name}\nregions={len(names)}\n")
+        (d / "meta.txt").write_text(f"mean_fd={mean_fd:.4f}\natlas={atlas_name}\nregions={len(names)}\n"
+                                    + "".join(f"t_{k}={v:.1f}\n" for k, v in timings.items()))
         return session, fc.shape[0], mean_fd, None
     except Exception as exc:  # one bad scan must not stop a long batch
         return session, None, None, f"{type(exc).__name__}: {exc}"

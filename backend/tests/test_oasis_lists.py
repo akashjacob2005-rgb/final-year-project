@@ -269,3 +269,31 @@ def test_stream_pipeline_keeps_matrices_and_deletes_raw(tmp_path, monkeypatch):
     seen_raw.clear()
     stream_pipeline.main()                                       # resumable: nothing redone
     assert seen_raw == []
+
+
+def test_stream_downloads_first_run_only_and_limits_threads(monkeypatch):
+    import os
+
+    from graph import stream_pipeline
+
+    assert stream_pipeline.first_run_only(["5", "6"], all_runs=False) == ["5"]
+    assert stream_pipeline.first_run_only(["5", "6"], all_runs=True) == ["5", "6"]
+    monkeypatch.delenv("ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS", raising=False)
+    stream_pipeline._limit_threads(3)
+    assert os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] == "3"
+
+
+def test_ants_to_nib_matches_file_roundtrip(tmp_path):
+    ants = pytest.importorskip("ants")
+    import nibabel as nib
+    import numpy as np
+
+    from graph.preprocess import ants_to_nib
+
+    data = np.random.default_rng(0).random((6, 7, 5, 4)).astype(np.float32)
+    aff = np.array([[-2.0, 0, 0, 90], [0, 2, 0, -126], [0, 0, 2, -72], [0, 0, 0, 1]])
+    nib.Nifti1Image(data, aff).to_filename(tmp_path / "x.nii.gz")
+    img = ants.image_read(str(tmp_path / "x.nii.gz"))
+    converted = ants_to_nib(img)
+    assert np.allclose(converted.affine, nib.load(tmp_path / "x.nii.gz").affine, atol=1e-4)
+    assert np.allclose(converted.get_fdata(), data, atol=1e-5)
