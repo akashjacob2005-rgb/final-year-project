@@ -126,6 +126,17 @@ def _one(job):
     from graph.connectivity import fc_from_bold
 
     try:
+        import nibabel as nib
+        from graph.connectivity import MIN_TIMEPOINTS
+
+        # Some OASIS-3 "bold" scans are only a handful of volumes (aborted or
+        # reference runs). They cannot be band-passed (scipy: "input must be
+        # greater than padlen") and never will be, so record them as excluded
+        # instead of failing — and retrying — on every run.
+        shape = nib.load(str(bold_path)).shape
+        n_vols = shape[3] if len(shape) == 4 else 1
+        if n_vols < MIN_TIMEPOINTS:
+            return session, None, None, f"excluded: only {n_vols} volumes (< {MIN_TIMEPOINTS})"
         labels_img, names = load_atlas(atlas_name)
         timings: dict = {}
         img, mean_fd = mni_bold(bold_path, timings)

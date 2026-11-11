@@ -367,3 +367,16 @@ def test_stream_parallel_downloads(tmp_path, monkeypatch):
     assert not (tmp_path / "_stream_scratch").exists()
     rows = list(csv.DictReader(open(tmp_path / "processed_graph" / "manifest.csv")))
     assert sorted(r["session"] for r in rows) == names
+
+
+def test_short_bold_is_excluded_not_failed(tmp_path):
+    """A BOLD with too few volumes is recorded as excluded (never retried), not an error."""
+    import nibabel as nib
+    import numpy as np
+
+    from graph.preprocess import _one
+
+    p = tmp_path / "short_bold.nii.gz"
+    nib.Nifti1Image(np.zeros((4, 4, 4, 20), np.float32), np.eye(4)).to_filename(p)
+    sess, regions, fd, err = _one(("OAS30038_MR_d2242", p, tmp_path, "unused", None))
+    assert regions is None and err.startswith("excluded: only 20 volumes")
