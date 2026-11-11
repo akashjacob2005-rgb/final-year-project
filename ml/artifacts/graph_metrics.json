@@ -1,0 +1,493 @@
+{
+  "model": "Logistic regression on functional connectivity (outperformed the GAT in CV)",
+  "model_type": "logreg",
+  "task": "Normal vs Impaired from brain connectivity (rs-fMRI FC, no DTI)",
+  "classes": [
+    "Normal (CDR 0)",
+    "Impaired (CDR >= 0.5)"
+  ],
+  "dataset": {
+    "name": "OASIS-3 resting-state fMRI",
+    "subjects": 654,
+    "sessions": 654,
+    "session_class_counts": {
+      "0": 362,
+      "1": 292
+    },
+    "atlas": "harvard_oxford_cort_2mm",
+    "regions": 48,
+    "split": "subject-grouped, stratified 5-fold cross-validation",
+    "majority_class_accuracy": 0.5535,
+    "mean_fd_mm": 0.237
+  },
+  "graph": {
+    "with_sc": false,
+    "sweep": true,
+    "chosen_per_fold": [
+      {
+        "top_k": 20,
+        "hidden": 32,
+        "epoch": 35,
+        "inner_auc": 0.606
+      },
+      {
+        "top_k": 10,
+        "hidden": 32,
+        "epoch": 29,
+        "inner_auc": 0.6768
+      },
+      {
+        "top_k": 20,
+        "hidden": 32,
+        "epoch": 35,
+        "inner_auc": 0.6853
+      },
+      {
+        "top_k": 20,
+        "hidden": 32,
+        "epoch": 23,
+        "inner_auc": 0.6497
+      },
+      {
+        "top_k": 5,
+        "hidden": 16,
+        "epoch": 21,
+        "inner_auc": 0.6365
+      }
+    ]
+  },
+  "cv": {
+    "folds": 5,
+    "accuracy": {
+      "mean": 0.6315,
+      "std": 0.0369
+    },
+    "balanced_accuracy": {
+      "mean": 0.6257,
+      "std": 0.0383
+    },
+    "macro_f1": {
+      "mean": 0.6256,
+      "std": 0.0384
+    },
+    "auc": {
+      "mean": 0.6668,
+      "std": 0.0366
+    },
+    "per_class_recall": [
+      0.6796,
+      0.5719
+    ],
+    "confusion_matrix": [
+      [
+        246,
+        116
+      ],
+      [
+        125,
+        167
+      ]
+    ],
+    "per_fold": [
+      {
+        "sessions": 131,
+        "accuracy": 0.5878,
+        "balanced_accuracy": 0.5806,
+        "macro_f1": 0.5807,
+        "auc": 0.5977,
+        "per_class_recall": [
+          0.6527777777777778,
+          0.5084745762711864
+        ],
+        "confusion_matrix": [
+          [
+            47,
+            25
+          ],
+          [
+            29,
+            30
+          ]
+        ]
+      },
+      {
+        "sessions": 131,
+        "accuracy": 0.6794,
+        "balanced_accuracy": 0.6734,
+        "macro_f1": 0.6739,
+        "auc": 0.6859,
+        "per_class_recall": [
+          0.726027397260274,
+          0.6206896551724138
+        ],
+        "confusion_matrix": [
+          [
+            53,
+            20
+          ],
+          [
+            22,
+            36
+          ]
+        ]
+      },
+      {
+        "sessions": 131,
+        "accuracy": 0.6718,
+        "balanced_accuracy": 0.6693,
+        "macro_f1": 0.669,
+        "auc": 0.7055,
+        "per_class_recall": [
+          0.6944444444444444,
+          0.6440677966101694
+        ],
+        "confusion_matrix": [
+          [
+            50,
+            22
+          ],
+          [
+            21,
+            38
+          ]
+        ]
+      },
+      {
+        "sessions": 131,
+        "accuracy": 0.6107,
+        "balanced_accuracy": 0.6082,
+        "macro_f1": 0.6074,
+        "auc": 0.6701,
+        "per_class_recall": [
+          0.6301369863013698,
+          0.5862068965517241
+        ],
+        "confusion_matrix": [
+          [
+            46,
+            27
+          ],
+          [
+            24,
+            34
+          ]
+        ]
+      },
+      {
+        "sessions": 130,
+        "accuracy": 0.6077,
+        "balanced_accuracy": 0.5972,
+        "macro_f1": 0.5972,
+        "auc": 0.6748,
+        "per_class_recall": [
+          0.6944444444444444,
+          0.5
+        ],
+        "confusion_matrix": [
+          [
+            50,
+            22
+          ],
+          [
+            29,
+            29
+          ]
+        ]
+      }
+    ]
+  },
+  "gat_cv": {
+    "folds": 5,
+    "accuracy": {
+      "mean": 0.6102,
+      "std": 0.0525
+    },
+    "balanced_accuracy": {
+      "mean": 0.6109,
+      "std": 0.0401
+    },
+    "macro_f1": {
+      "mean": 0.6004,
+      "std": 0.0573
+    },
+    "auc": {
+      "mean": 0.6569,
+      "std": 0.0398
+    },
+    "per_class_recall": [
+      0.5991,
+      0.6226
+    ],
+    "confusion_matrix": [
+      [
+        217,
+        145
+      ],
+      [
+        110,
+        182
+      ]
+    ],
+    "per_fold": [
+      {
+        "sessions": 131,
+        "accuracy": 0.5191,
+        "balanced_accuracy": 0.5457,
+        "macro_f1": 0.4961,
+        "auc": 0.6003,
+        "per_class_recall": [
+          0.2777777777777778,
+          0.8135593220338984
+        ],
+        "confusion_matrix": [
+          [
+            20,
+            52
+          ],
+          [
+            11,
+            48
+          ]
+        ]
+      },
+      {
+        "sessions": 131,
+        "accuracy": 0.6412,
+        "balanced_accuracy": 0.6391,
+        "macro_f1": 0.6382,
+        "auc": 0.6892,
+        "per_class_recall": [
+          0.6575342465753424,
+          0.6206896551724138
+        ],
+        "confusion_matrix": [
+          [
+            48,
+            25
+          ],
+          [
+            22,
+            36
+          ]
+        ]
+      },
+      {
+        "sessions": 131,
+        "accuracy": 0.6107,
+        "balanced_accuracy": 0.6122,
+        "macro_f1": 0.6099,
+        "auc": 0.6874,
+        "per_class_recall": [
+          0.5972222222222222,
+          0.6271186440677966
+        ],
+        "confusion_matrix": [
+          [
+            43,
+            29
+          ],
+          [
+            22,
+            37
+          ]
+        ]
+      },
+      {
+        "sessions": 131,
+        "accuracy": 0.6031,
+        "balanced_accuracy": 0.5942,
+        "macro_f1": 0.5945,
+        "auc": 0.6169,
+        "per_class_recall": [
+          0.6712328767123288,
+          0.5172413793103449
+        ],
+        "confusion_matrix": [
+          [
+            49,
+            24
+          ],
+          [
+            28,
+            30
+          ]
+        ]
+      },
+      {
+        "sessions": 130,
+        "accuracy": 0.6769,
+        "balanced_accuracy": 0.6631,
+        "macro_f1": 0.6635,
+        "auc": 0.6906,
+        "per_class_recall": [
+          0.7916666666666666,
+          0.5344827586206896
+        ],
+        "confusion_matrix": [
+          [
+            57,
+            15
+          ],
+          [
+            27,
+            31
+          ]
+        ]
+      }
+    ]
+  },
+  "baseline": {
+    "model": "logistic regression on Fisher-z FC upper triangle (same folds)",
+    "accuracy": {
+      "mean": 0.6315,
+      "std": 0.0369
+    },
+    "balanced_accuracy": {
+      "mean": 0.6257,
+      "std": 0.0383
+    },
+    "macro_f1": {
+      "mean": 0.6256,
+      "std": 0.0384
+    },
+    "auc": {
+      "mean": 0.6668,
+      "std": 0.0366
+    },
+    "per_class_recall": [
+      0.6796,
+      0.5719
+    ],
+    "confusion_matrix": [
+      [
+        246,
+        116
+      ],
+      [
+        125,
+        167
+      ]
+    ],
+    "per_fold": [
+      {
+        "sessions": 131,
+        "accuracy": 0.5878,
+        "balanced_accuracy": 0.5806,
+        "macro_f1": 0.5807,
+        "auc": 0.5977,
+        "per_class_recall": [
+          0.6527777777777778,
+          0.5084745762711864
+        ],
+        "confusion_matrix": [
+          [
+            47,
+            25
+          ],
+          [
+            29,
+            30
+          ]
+        ]
+      },
+      {
+        "sessions": 131,
+        "accuracy": 0.6794,
+        "balanced_accuracy": 0.6734,
+        "macro_f1": 0.6739,
+        "auc": 0.6859,
+        "per_class_recall": [
+          0.726027397260274,
+          0.6206896551724138
+        ],
+        "confusion_matrix": [
+          [
+            53,
+            20
+          ],
+          [
+            22,
+            36
+          ]
+        ]
+      },
+      {
+        "sessions": 131,
+        "accuracy": 0.6718,
+        "balanced_accuracy": 0.6693,
+        "macro_f1": 0.669,
+        "auc": 0.7055,
+        "per_class_recall": [
+          0.6944444444444444,
+          0.6440677966101694
+        ],
+        "confusion_matrix": [
+          [
+            50,
+            22
+          ],
+          [
+            21,
+            38
+          ]
+        ]
+      },
+      {
+        "sessions": 131,
+        "accuracy": 0.6107,
+        "balanced_accuracy": 0.6082,
+        "macro_f1": 0.6074,
+        "auc": 0.6701,
+        "per_class_recall": [
+          0.6301369863013698,
+          0.5862068965517241
+        ],
+        "confusion_matrix": [
+          [
+            46,
+            27
+          ],
+          [
+            24,
+            34
+          ]
+        ]
+      },
+      {
+        "sessions": 130,
+        "accuracy": 0.6077,
+        "balanced_accuracy": 0.5972,
+        "macro_f1": 0.5972,
+        "auc": 0.6748,
+        "per_class_recall": [
+          0.6944444444444444,
+          0.5
+        ],
+        "confusion_matrix": [
+          [
+            50,
+            22
+          ],
+          [
+            29,
+            29
+          ]
+        ]
+      }
+    ]
+  },
+  "deployed": {
+    "which": "logistic regression retrained on all 654 sessions (C=0.1)",
+    "reason": "the GAT did not beat the baseline (CV AUC 0.657 vs 0.667), so the logistic-regression model is deployed"
+  },
+  "caveats": [
+    "Labels come from CDR staging, not a clinical diagnosis; CDR 0.5 is only a proxy for MCI.",
+    "Single cohort (OASIS-3): scanners, protocol and population are not independently validated.",
+    "Cortical atlas only (harvard_oxford_cort_2mm): the hippocampus is not a node.",
+    "Trained without DTI: structural connectivity inputs are ignored.",
+    "Uploads must be motion-corrected and in MNI space; native-space BOLD gives meaningless graphs.",
+    "Highlighted connections show what drove the score, not which connection is abnormal.",
+    "A screening aid for research and education, not a diagnosis."
+  ],
+  "version": "2.0.0"
+}
