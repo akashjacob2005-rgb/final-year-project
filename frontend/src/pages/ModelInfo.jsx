@@ -259,9 +259,8 @@ function GraphPathwayCard() {
             <div><div className="stat-value">{num(g.cv?.auc)}</div><div className="stat-label">AUC (one-vs-rest)</div></div>
           </div>
           <p className="tiny muted mt-2">
-            Baseline, same folds (logistic regression on connectivity): accuracy {pct(g.baseline?.accuracy)},
-            macro-F1 {num(g.baseline?.macro_f1)}. {g.dataset?.sessions} sessions, {g.dataset?.subjects} subjects,
-            {' '}{g.dataset?.atlas}.
+            Deployed: {g.deployed?.which}. {g.deployed?.reason}. {g.dataset?.sessions} sessions,
+            {' '}{g.dataset?.subjects} subjects, {g.dataset?.atlas}.
           </p>
           <ul className="small muted" style={{ paddingLeft: 18, margin: '8px 0 0', lineHeight: 1.9 }}>
             {(g.caveats || []).map((c, i) => <li key={i}>{c}</li>)}

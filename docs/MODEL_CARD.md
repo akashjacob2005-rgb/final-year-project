@@ -442,6 +442,14 @@ python ml/mri/train_mri.py --data-dir ... --experiment e01_baseline_honest \
 
 ## Connectivity pathway (added later): graph attention network
 
+**First real training (OASIS-3, 654 sessions, 3-class):** the GAT reached
+CV AUC 0.60 / accuracy 44% and lost to the logistic-regression baseline
+(AUC 0.63 / 54%), below the 55% majority-class rate. Version 2 therefore
+defaults to Normal vs Impaired, uses leaner Fisher-z node features, a
+smaller regularised GAT with nested hyper-parameter selection, and **deploys
+whichever model wins in cross-validation** — the GAT only if it actually
+beats the baseline. `graph_metrics.json` records both and which is deployed.
+
 **Status: not yet trained. No metrics exist, and none are reported.**
 The pipeline, model, backend and page are built and tested on generated
 fixtures; training needs OASIS-3 resting-state fMRI (and DTI) behind approved

@@ -148,6 +148,9 @@ def main() -> None:
                 f.write(f"{sess}\t{err}\n")
         stats["done" if not err else "problems"] += 1
         finished.append(time.time())
+        if len(finished) % 25 == 0:
+            # Checkpoint: a crash or reboot must not leave manifest.csv stale.
+            write_manifest(out_dir, labels)
         n = stats["done"] + stats["problems"]
         # ETA from the recent pace (the first session also pays start-up costs)
         recent = finished[-11:]

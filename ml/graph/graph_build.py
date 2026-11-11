@@ -10,7 +10,8 @@ way.
                  made symmetric (an edge kept for either end is kept for both)
                  and stored in both directions, plus one self-loop per node
     edge_attr  = [FC_ij, SC_ij]                       (edge_dim = 2)
-    x (node i) = [FC row i, SC row i, degree_i, strength_i]   (2N + 2 features)
+    x (node i) = [FC row i (Fisher z), SC row i, degree_i, strength_i]
+                 (N + 2 features without DTI, 2N + 2 with)
 
 SC (structural connectivity from DTI tractography) arrives as streamline
 counts spanning orders of magnitude, so it is log1p-scaled and divided by its
@@ -103,7 +104,8 @@ def select_edges(fc: np.ndarray, top_k: int | None = DEFAULT_TOP_K,
 
 
 def build_graph(fc: np.ndarray, sc: np.ndarray | None = None, *,
-                top_k: int | None = DEFAULT_TOP_K, threshold: float | None = None) -> dict:
+                top_k: int | None = DEFAULT_TOP_K, threshold: float | None = None,
+                fisher_z: bool = False) -> dict:
     """One subject's graph as numpy arrays (PyG layout: edge_index[0]=source)."""
     fc = validate_matrix(fc, fc.shape[0], "functional connectivity")
     n = fc.shape[0]
@@ -123,7 +125,11 @@ def build_graph(fc: np.ndarray, sc: np.ndarray | None = None, *,
     denom = max(1, n - 1)
     degree = adj.sum(axis=1) / denom
     strength = (np.abs(fc) * adj).sum(axis=1) / denom
-    x = np.hstack([fc, sc_n, degree[:, None], strength[:, None]]).astype(np.float32)
+    rows = np.arctanh(np.clip(fc, -0.999, 0.999)) if fisher_z else fc
+    # Without DTI the SC block would be N all-zero columns per node: noise for
+    # a model trained on ~650 graphs, so it is left out entirely.
+    blocks = [rows] + ([sc_n] if sc is not None else []) + [degree[:, None], strength[:, None]]
+    x = np.hstack(blocks).astype(np.float32)
     return {
         "x": x,
         "edge_index": edge_index,
@@ -134,5 +140,5 @@ def build_graph(fc: np.ndarray, sc: np.ndarray | None = None, *,
     }
 
 
-def node_feature_dim(n_regions: int) -> int:
-    return 2 * n_regions + 2
+def node_feature_dim(n_regions: int, with_sc: bool = True) -> int:
+    return (2 if with_sc else 1) * n_regions + 2

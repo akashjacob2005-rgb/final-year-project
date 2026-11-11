@@ -372,3 +372,62 @@ def test_fusion_hook_is_disabled():
 
     assert fusion.GRAPH_FUSION_ENABLED is False
     assert fusion.graph_component({"Normal": 0.1, "MCI": 0.5, "Dementia": 0.4}) is None
+
+
+# --------------------------------------------------------------------------
+# v2 artifacts: binary task, FC-only features, logistic-regression winner
+# --------------------------------------------------------------------------
+def test_fc_only_graph_drops_sc_block_and_uses_fisher_z():
+    fc = fc_matrix()
+    g = build_graph(fc, None, top_k=3, fisher_z=True)
+    assert g["x"].shape == (N_REGIONS, N_REGIONS + 2)
+    assert np.allclose(g["x"][0, 1], np.arctanh(np.clip(fc[0, 1], -0.999, 0.999)), atol=1e-5)
+
+
+def _logreg_weights(seed=0, n_classes=2):
+    from graph.linear_numpy import fc_features
+
+    f = fc_features(fc_matrix()).shape[0]
+    rng = np.random.default_rng(seed)
+    return {"scaler_mean": np.zeros(f), "scaler_scale": np.ones(f),
+            "coef": rng.standard_normal((1 if n_classes == 2 else n_classes, f)),
+            "intercept": np.zeros(1 if n_classes == 2 else n_classes)}
+
+
+def test_logreg_forward_matches_sklearn_and_explains():
+    from sklearn.linear_model import LogisticRegression
+
+    from graph import linear_numpy
+
+    rng = np.random.default_rng(1)
+    fcs = np.array([fc_matrix(s) for s in range(30)])
+    X = linear_numpy.fc_features(fcs)
+    y = rng.integers(0, 2, 30)
+    lr = LogisticRegression(max_iter=2000).fit(X, y)
+    w = {"scaler_mean": np.zeros(X.shape[1]), "scaler_scale": np.ones(X.shape[1]),
+         "coef": lr.coef_, "intercept": lr.intercept_}
+    out = linear_numpy.forward(fcs[0], w)
+    assert np.allclose(out["probabilities"], lr.predict_proba(X[:1])[0], atol=1e-8)
+    edges = linear_numpy.top_edges(fcs[0], out["contributions"], CONFIG["region_names"], k=4)
+    assert 0 < len(edges) <= 4 and all(e["importance"] > 0 for e in edges)
+
+
+@pytest.fixture
+def logreg_model(no_model, monkeypatch):
+    np.savez(no_model / "graph_model.npz", **_logreg_weights())
+    cfg = {**CONFIG, "model_type": "logreg", "with_sc": False, "fisher_z": True,
+           "class_short": ["Normal", "Impaired"], "classes": ["Normal (CDR 0)", "Impaired (CDR >= 0.5)"]}
+    (no_model / "graph_config.json").write_text(json.dumps(cfg))
+    monkeypatch.setattr(graph_model, "_atlas", lambda name: labels_img())
+    graph_model.reset()
+    return no_model
+
+
+def test_analyze_with_logreg_artifact_is_binary(alice, logreg_model):
+    r = alice.post("/api/graph/analyze", files=_files())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert set(body["probabilities"]) == {"Normal", "Impaired"}
+    assert body["model_type"] == "logreg"
+    assert abs(sum(body["probabilities"].values()) - 1) < 1e-3
+    assert all("importance" in e for e in body["top_edges"])

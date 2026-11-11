@@ -99,7 +99,8 @@ def top_edges(graph: dict, attentions: list[np.ndarray], region_names: list[str]
     fc_of = {(int(s), int(d)): float(f) for s, d, f in zip(src, dst, fc_col)}
     return [
         {"region_a": region_names[a], "region_b": region_names[b],
-         "attention": round(float(score), 4), "fc": round(fc_of.get((a, b), 0.0), 4)}
+         "attention": round(float(score), 4), "importance": round(float(score), 4),
+         "fc": round(fc_of.get((a, b), 0.0), 4)}
         for score, (a, b) in ranked
     ]
 

@@ -125,15 +125,24 @@ def analyze(fmri_bytes: bytes, sc_raw: bytes | None = None, sc_suffix: str | Non
         raise GraphError(f"could not extract region time series from this scan: {exc}") from exc
     if fc.shape != (n, n):
         raise GraphError(f"the atlas produced {fc.shape[0]} regions but the model expects {n}")
-    try:
-        graph = build_graph(fc, sc if config.get("with_sc") else None,
-                            top_k=config.get("top_k"), threshold=config.get("threshold"))
-    except MatrixError as exc:
-        raise GraphError(str(exc)) from exc
+    names = config.get("class_short") or ["Normal", "MCI", "Dementia"]
+    if config.get("model_type") == "logreg":
+        # The baseline won in cross-validation, so it is the deployed model.
+        from graph import linear_numpy
 
-    out = gat_numpy.forward(graph, weights, config)
-    probs = out["probabilities"]
-    names = ["Normal", "MCI", "Dementia"]
+        out = linear_numpy.forward(fc, weights)
+        probs = out["probabilities"]
+        top_edges = linear_numpy.top_edges(fc, out["contributions"], config["region_names"], k=TOP_EDGES)
+    else:
+        try:
+            graph = build_graph(fc, sc if config.get("with_sc") else None,
+                                top_k=config.get("top_k"), threshold=config.get("threshold"),
+                                fisher_z=bool(config.get("fisher_z")))
+        except MatrixError as exc:
+            raise GraphError(str(exc)) from exc
+        out = gat_numpy.forward(graph, weights, config)
+        probs = out["probabilities"]
+        top_edges = gat_numpy.top_edges(graph, out["attention"], config["region_names"], k=TOP_EDGES)
     top = int(probs.argmax())
     caveats = list((model_metrics() or {}).get("caveats", []))
     if sc is not None and not config.get("with_sc"):
@@ -144,7 +153,8 @@ def analyze(fmri_bytes: bytes, sc_raw: bytes | None = None, sc_suffix: str | Non
         "probabilities": {k: round(float(p), 4) for k, p in zip(names, probs)},
         "predicted_class": names[top],
         "predicted_index": top,
-        "top_edges": gat_numpy.top_edges(graph, out["attention"], config["region_names"], k=TOP_EDGES),
+        "top_edges": top_edges,
+        "model_type": config.get("model_type", "gat"),
         "n_regions": n,
         "used_sc": bool(config.get("with_sc")),
         "caveats": caveats,

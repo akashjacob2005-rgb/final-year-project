@@ -63,8 +63,11 @@ def graph_info():
         "classes": metrics.get("classes"),
         "dataset": metrics.get("dataset"),
         "graph": metrics.get("graph"),
+        "model_type": metrics.get("model_type", "gat"),
         "cv": metrics.get("cv"),
+        "gat_cv": metrics.get("gat_cv"),
         "baseline": metrics.get("baseline"),
+        "deployed": metrics.get("deployed"),
         "caveats": metrics.get("caveats", []),
         "version": metrics.get("version"),
     }

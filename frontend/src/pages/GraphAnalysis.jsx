@@ -11,7 +11,7 @@ import { api } from '../api/client'
  */
 
 const MAX_FMRI_MB = 400
-const CLASS_COLORS = { Normal: 'var(--low)', MCI: 'var(--borderline)', Dementia: 'var(--elevated)' }
+const CLASS_COLORS = { Normal: 'var(--low)', MCI: 'var(--borderline)', Dementia: 'var(--elevated)', Impaired: 'var(--elevated)' }
 
 function Chord({ edges }) {
   // Simple connectome view: regions on a circle, attended pairs as chords.
@@ -25,7 +25,8 @@ function Chord({ edges }) {
       return [name, { x: c + r * Math.cos(a), y: c + r * Math.sin(a), a }]
     })
   )
-  const max = Math.max(...edges.map((e) => e.attention), 1e-9)
+  const weight = (e) => e.importance ?? e.attention
+  const max = Math.max(...edges.map(weight), 1e-9)
   return (
     <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Most-attended region pairs"
       style={{ width: '100%', maxWidth: 360, display: 'block', margin: '0 auto' }}>
@@ -34,8 +35,8 @@ function Chord({ edges }) {
         const q = pos[e.region_b]
         return (
           <path key={i} d={`M ${p.x} ${p.y} Q ${c} ${c} ${q.x} ${q.y}`} fill="none"
-            stroke="var(--brand)" strokeOpacity={0.25 + 0.75 * (e.attention / max)}
-            strokeWidth={1 + 3 * (e.attention / max)} />
+            stroke="var(--brand)" strokeOpacity={0.25 + 0.75 * (weight(e) / max)}
+            strokeWidth={1 + 3 * (weight(e) / max)} />
         )
       })}
       {regions.map((name) => {
@@ -213,17 +214,22 @@ export default function GraphAnalysis() {
           </div>
 
           <div className="card">
-            <div className="card-title">Where the model looked</div>
+            <div className="card-title">
+              {result.model_type === 'logreg' ? 'Connections that drove this result' : 'Where the model looked'}
+            </div>
             <div className="card-sub">
-              Region pairs with the highest attention. Attention shows what the model weighed most,
-              not which connection is abnormal.
+              {result.model_type === 'logreg'
+                ? 'Region pairs whose connection strength pushed the score most towards this result. They show what drove the score, not which connection is abnormal.'
+                : 'Region pairs with the highest attention. Attention shows what the model weighed most, not which connection is abnormal.'}
             </div>
             <Chord edges={result.top_edges} />
             <ol className="small" style={{ paddingLeft: 18, margin: '12px 0 0', lineHeight: 1.8 }}>
               {result.top_edges.map((e, i) => (
                 <li key={i}>
                   {e.region_a} ↔ {e.region_b}{' '}
-                  <span className="muted mono">attention {e.attention.toFixed(3)} · r {e.fc.toFixed(2)}</span>
+                  <span className="muted mono">
+                    {result.model_type === 'logreg' ? 'weight' : 'attention'} {(e.importance ?? e.attention).toFixed(3)} · r {e.fc.toFixed(2)}
+                  </span>
                 </li>
               ))}
             </ol>
@@ -243,11 +249,13 @@ export default function GraphAnalysis() {
           <div className="grid grid-3 mt-3" style={{ gap: 12 }}>
             <div><div className="stat-value">{pct(cv.accuracy)}</div><div className="stat-label">accuracy ({cv.folds}-fold CV)</div></div>
             <div><div className="stat-value">{num(cv.macro_f1)}</div><div className="stat-label">macro-F1</div></div>
-            <div><div className="stat-value">{num(cv.auc)}</div><div className="stat-label">AUC (one-vs-rest)</div></div>
+            <div><div className="stat-value">{num(cv.auc)}</div><div className="stat-label">AUC</div></div>
           </div>
           <p className="tiny muted mt-2">
-            Baseline (logistic regression on the same folds): accuracy {pct(base.accuracy)},
-            macro-F1 {num(base.macro_f1)}, AUC {num(base.auc)}.
+            {info.model_type === 'logreg'
+              ? <>The graph attention network was also trained on the same folds and scored lower (accuracy {pct(info.gat_cv?.accuracy)}, AUC {num(info.gat_cv?.auc)}), so the simpler model is the one deployed.</>
+              : <>Baseline (logistic regression on the same folds): accuracy {pct(base.accuracy)}, macro-F1 {num(base.macro_f1)}, AUC {num(base.auc)}.</>}
+            {info.dataset?.majority_class_accuracy != null && <> Always guessing the most common class would score {pct({ mean: info.dataset.majority_class_accuracy })}.</>}
           </p>
         </div>
         <div className="card">
