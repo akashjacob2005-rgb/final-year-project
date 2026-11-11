@@ -15,8 +15,9 @@ connection) while --workers sessions are processed; peak disk use is about
     caffeinate -i python ml/graph/stream_pipeline.py --data-root $D --one-per-subject --max-normal 500
 
 Resumable: sessions whose fc.npy exists are skipped, so stop it any time and
-re-run the same command. Sessions excluded for head motion are recorded in
-processed_graph/excluded.txt and not retried. Runs BOLD only (DTI needs
+re-run the same command. Sessions excluded (head motion, too few volumes) are
+recorded with the reason in processed_graph/excluded.txt and not retried
+unless --retry-excluded. Runs BOLD only (DTI needs
 tractography outside Python; see preprocess.py).
 
 Then: python ml/graph/train_graph.py --data-dir $D/processed_graph
@@ -71,6 +72,8 @@ def main() -> None:
     ap.add_argument("--one-per-subject", action="store_true")
     ap.add_argument("--max-normal", type=int, default=0)
     ap.add_argument("--limit", type=int, default=0, help="stop after N new sessions")
+    ap.add_argument("--retry-excluded", action="store_true",
+                    help="redo sessions excluded by an earlier run (the old list is kept as a .bak)")
     args = ap.parse_args()
 
     root = Path(args.data_root).expanduser()
@@ -80,7 +83,22 @@ def main() -> None:
     shutil.rmtree(scratch, ignore_errors=True)  # leftovers from an interrupted run
     scratch.mkdir()
     excluded_file = out_dir / "excluded.txt"
-    excluded = set(excluded_file.read_text().split()) if excluded_file.exists() else set()
+    # One "session<TAB>reason" line per exclusion (older files: session only).
+    excluded_lines = excluded_file.read_text().splitlines() if excluded_file.exists() else []
+    if args.retry_excluded and excluded_lines:
+        excluded_file.rename(out_dir / f"excluded.{int(time.time())}.bak")
+        print(f"--retry-excluded: {len(excluded_lines)} earlier exclusions moved aside and will be redone")
+        excluded_lines = []
+    excluded = {line.split()[0] for line in excluded_lines if line.strip()}
+    if excluded_lines:
+        reasons: dict[str, int] = {}
+        for line in excluded_lines:
+            parts = line.split("\t", 1)
+            key = parts[1].split(":")[0] if len(parts) > 1 else "reason not recorded (older run)"
+            key = "head motion" if "FD" in key or "FD" in (parts[1] if len(parts) > 1 else "") else key
+            reasons[key] = reasons.get(key, 0) + 1
+        print(f"{len(excluded)} sessions excluded earlier: "
+              + ", ".join(f"{v} {k}" for k, v in sorted(reasons.items(), key=lambda kv: -kv[1])))
 
     labels, label_name = load_labels(root)
     sessions, source = read_sessions(root / "processed")
@@ -127,7 +145,7 @@ def main() -> None:
         shutil.rmtree(scratch / sess, ignore_errors=True)  # the whole point: never keep raw data
         if err and err.startswith("excluded"):
             with open(excluded_file, "a") as f:
-                f.write(sess + "\n")
+                f.write(f"{sess}\t{err}\n")
         stats["done" if not err else "problems"] += 1
         finished.append(time.time())
         n = stats["done"] + stats["problems"]

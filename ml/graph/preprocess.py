@@ -141,7 +141,8 @@ def _one(job):
         timings: dict = {}
         img, mean_fd = mni_bold(bold_path, timings)
         if mean_fd > MAX_MEAN_FD_MM:
-            return session, None, mean_fd, f"excluded: mean FD {mean_fd:.2f} mm > {MAX_MEAN_FD_MM}"
+            return session, None, mean_fd, (f"excluded: head motion, mean FD {mean_fd:.2f} mm > "
+                                            f"{MAX_MEAN_FD_MM} ({n_vols} volumes)")
         t0 = time.time()
         fc = fc_from_bold(img, labels_img)
         timings["fc"] = time.time() - t0

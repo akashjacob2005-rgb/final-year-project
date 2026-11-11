@@ -380,3 +380,30 @@ def test_short_bold_is_excluded_not_failed(tmp_path):
     nib.Nifti1Image(np.zeros((4, 4, 4, 20), np.float32), np.eye(4)).to_filename(p)
     sess, regions, fd, err = _one(("OAS30038_MR_d2242", p, tmp_path, "unused", None))
     assert regions is None and err.startswith("excluded: only 20 volumes")
+
+
+def test_exclusion_reasons_summary_and_retry(tmp_path, monkeypatch, capsys):
+    import sys
+
+    from graph import stream_pipeline
+
+    proc = tmp_path / "processed"
+    proc.mkdir()
+    (proc / "graph_sessions.csv").write_text("experiment_id,subject_id,bold_ids,dwi_ids\nOAS30001_MR_d0001,OAS30001,5,\n")
+    (proc / "graph_session_labels.csv").write_text("mr_session,label,cdr,days_apart\nOAS30001_MR_d0001,0,0,0\n")
+    out = tmp_path / "processed_graph"
+    out.mkdir()
+    (out / "excluded.txt").write_text("OAS30001_MR_d0001\texcluded: head motion, mean FD 0.90 mm > 0.5 (160 volumes)\n"
+                                      "OAS39999_MR_d0001\n")
+    monkeypatch.setattr(sys, "argv", ["s", "--data-root", str(tmp_path), "--workers", "0"])
+    stream_pipeline.main()  # nothing to do: the one session is excluded
+    text = capsys.readouterr().out
+    assert "1 head motion" in text and "1 reason not recorded" in text and "0 to process" in text
+
+    monkeypatch.setattr(sys, "argv", ["s", "--data-root", str(tmp_path), "--workers", "0", "--retry-excluded", "--limit", "0"])
+    monkeypatch.setattr(oasis_xnat, "OasisXnat", lambda *a, **k: (_ for _ in ()).throw(SystemExit("stop before network")))
+    monkeypatch.setattr("graph.atlas.load_atlas", lambda name: (None, ["a"]))
+    with pytest.raises(SystemExit, match="stop before network"):
+        stream_pipeline.main()
+    assert "1 to process" in capsys.readouterr().out
+    assert list(out.glob("excluded.*.bak")) and not (out / "excluded.txt").exists()
